@@ -1,0 +1,181 @@
+Index.html
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Brick Mission: Master</title>
+    <style>
+        body { background: #000; margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; touch-action: none; color: white; }
+        canvas { display: block; background: #050505; }
+        #menu {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 20;
+        }
+        .mode-btn { 
+            width: 85%; max-width: 320px; padding: 12px; margin: 8px;
+            font-size: 16px; font-weight: bold; border: 2px solid #0ff;
+            background: transparent; color: #0ff; border-radius: 8px; cursor: pointer;
+        }
+        .best-score { font-size: 11px; color: #aaa; display: block; }
+        #stats { position: absolute; top: 15px; width: 100%; display: flex; justify-content: space-around; color: #0ff; font-weight: bold; z-index: 10; pointer-events: none;}
+    </style>
+</head>
+<body>
+
+    <div id="stats">
+        <span>SCORE: <span id="score">0</span></span>
+        <span id="hint">AIM & RELEASE</span>
+    </div>
+
+    <div id="menu">
+        <h1 style="color: #0ff; text-shadow: 0 0 10px #0ff;">BRICK MISSION</h1>
+        <button class="mode-btn" onclick="startMode('classic')">CLASSIC MISSION <span class="best-score" id="best-classic">Best: 0</span></button>
+        <button class="mode-btn" onclick="startMode('descent')">DESCENT MISSION <span class="best-score" id="best-descent">Best: 0</span></button>
+        <button class="mode-btn" onclick="startMode('boss')">BOSS ENCOUNTER <span class="best-score" id="best-boss">Best: 0</span></button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const menu = document.getElementById("menu");
+const scoreEl = document.getElementById("score");
+const hintEl = document.getElementById("hint");
+
+let gameRunning = false, isAiming = false, score = 0, currentMode = '';
+let paddleX, paddleW, bricks = [], balls = [];
+let launchAngle = -Math.PI / 2;
+
+function setup() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    paddleW = canvas.width * 0.3;
+    paddleX = (canvas.width - paddleW) / 2;
+}
+window.addEventListener('resize', setup);
+setup();
+
+function updateHighScoresDisplay() {
+    ['classic', 'descent', 'boss'].forEach(mode => {
+        const high = localStorage.getItem('highScore_' + mode) || 0;
+        document.getElementById('best-' + mode).innerText = "Best: " + high;
+    });
+}
+updateHighScoresDisplay();
+
+function startMode(mode) {
+    currentMode = mode;
+    score = 0; scoreEl.innerText = "0";
+    menu.style.display = "none";
+    gameRunning = true;
+    isAiming = true;
+    hintEl.innerText = "DRAG TO AIM";
+    bricks = [];
+    balls = [{ x: canvas.width/2, y: canvas.height-60, dx: 0, dy: 0, radius: 8 }];
+    
+    if(mode !== 'boss') initBricks(mode === 'descent' ? 4 : 7);
+    draw();
+}
+
+// Touch Handling
+window.addEventListener("touchstart", (e) => { if(!gameRunning) return; e.preventDefault(); });
+window.addEventListener("touchmove", (e) => {
+    if(!gameRunning) return;
+    let touchX = e.touches[0].clientX;
+    let touchY = e.touches[0].clientY;
+
+    if(isAiming) {
+        // Calculate angle between ball and touch point
+        launchAngle = Math.atan2(touchY - (canvas.height-60), touchX - (canvas.width/2));
+    } else {
+        paddleX = touchX - paddleW/2;
+    }
+}, { passive: false });
+
+window.addEventListener("touchend", () => {
+    if(isAiming) {
+        isAiming = false;
+        hintEl.innerText = "PLAYING";
+        balls[0].dx = Math.cos(launchAngle) * 7;
+        balls[0].dy = Math.sin(launchAngle) * 7;
+    }
+});
+
+function draw() {
+    if(!gameRunning) return;
+    ctx.fillStyle = "rgba(0,0,0,0.4)";
+    ctx.fillRect(0,0,canvas.width, canvas.height);
+
+    // DRAW AIMING LINE
+    if(isAiming) {
+        ctx.setLineDash([5, 10]);
+        ctx.beginPath();
+        ctx.moveTo(canvas.width/2, canvas.height-60);
+        ctx.lineTo(canvas.width/2 + Math.cos(launchAngle)*150, (canvas.height-60) + Math.sin(launchAngle)*150);
+        ctx.strokeStyle = "#0ff";
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    // DRAW PADDLE
+    ctx.fillStyle = "#0ff";
+    ctx.fillRect(paddleX, canvas.height-45, paddleW, 15);
+
+    // DRAW BRICKS
+    bricks.forEach((row, rIdx) => {
+        row.forEach((b, cIdx) => {
+            if(b.status) {
+                let bx = cIdx*(canvas.width/6)+2, by = rIdx*32 + 85;
+                ctx.fillStyle = b.color;
+                ctx.fillRect(bx, by, canvas.width/6-4, 28);
+                
+                balls.forEach(ball => {
+                    if(!isAiming && ball.x > bx && ball.x < bx+canvas.width/6 && ball.y > by && ball.y < by+28) {
+                        ball.dy *= -1; b.status = 0; score += 10;
+                        scoreEl.innerText = score;
+                    }
+                });
+            }
+        });
+    });
+
+    // BALL LOGIC
+    balls.forEach((ball, i) => {
+        ctx.beginPath(); ctx.arc(ball.x, ball.y, 8, 0, Math.PI*2);
+        ctx.fillStyle = "#fff"; ctx.fill();
+
+        if(!isAiming) {
+            ball.x += ball.dx; ball.y += ball.dy;
+            if(ball.x < 8 || ball.x > canvas.width-8) ball.dx *= -1;
+            if(ball.y < 8) ball.dy *= -1;
+            if(ball.y > canvas.height-45 && ball.x > paddleX && ball.x < paddleX+paddleW) {
+                ball.dy = -Math.abs(ball.dy);
+            }
+            if(ball.y > canvas.height) endGame("MISSION FAILED");
+        }
+    });
+
+    if(gameRunning) requestAnimationFrame(draw);
+}
+
+function initBricks(rows) {
+    for(let r=0; r<rows; r++) {
+        let row = [];
+        for(let c=0; c<6; c++) row.push({ status: 1, color: `hsl(${r*35+190}, 80%, 50%)` });
+        bricks.push(row);
+    }
+}
+
+function endGame(msg) {
+    gameRunning = false;
+    const currentHigh = localStorage.getItem('highScore_' + currentMode) || 0;
+    if(score > currentHigh) localStorage.setItem('highScore_' + currentMode, score);
+    menu.style.display = "flex";
+    menu.querySelector('h1').innerText = msg;
+    updateHighScoresDisplay();
+}
+</script>
+</body>
+</html>
