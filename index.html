@@ -2,35 +2,32 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Brick Mission: Strict Grid</title>
+    <title>Brick Mission: Ultimate</title>
     <style>
         body { background: #000; margin: 0; overflow: hidden; font-family: sans-serif; touch-action: none; color: white; }
-        canvas { display: block; background: #000; }
-        #top-bar { position: absolute; top: 0; width: 100%; height: 45px; background: #1a1a1a; display: flex; justify-content: space-between; align-items: center; padding: 0 15px; box-sizing: border-box; border-bottom: 1px solid #333; z-index: 10; }
-        #stats { position: absolute; top: 50px; width: 100%; text-align: center; color: #888; font-size: 11px; font-weight: bold; z-index: 5; }
-        .ui-btn { background: #333; border: 1px solid #444; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
-        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
-        .m-btn { width: 160px; padding: 10px; margin: 8px; background: #00d2ff; color: #000; border: none; border-radius: 20px; font-weight: bold; }
+        canvas { display: block; }
+        #top-bar { position: absolute; top: 0; width: 100%; height: 45px; background: #111; display: flex; justify-content: space-around; align-items: center; border-bottom: 1px solid #333; z-index: 10; }
+        #stats { position: absolute; top: 50px; width: 100%; text-align: center; color: #0ff; font-size: 12px; font-weight: bold; }
     </style>
 </head>
 <body>
     <div id="top-bar">
-        <button class="ui-btn" onclick="togglePause()">PAUSE</button>
-        <div id="mission-tag" style="color:#00d2ff; font-weight:bold; font-size:14px;">MISSION 1</div>
-        <button class="ui-btn" onclick="timeScale = timeScale === 1 ? 2.5 : 1" id="speed-btn">x1</button>
+        <div id="mission-tag">MISSION 1</div>
+        <div onclick="timeScale = timeScale === 1 ? 2.5 : 1" style="color:#f0f; font-weight:bold;">SPEED x1</div>
     </div>
     <div id="stats">BALLS: <span id="bc">20</span></div>
-    <div id="overlay"><h1 id="ot">PAUSED</h1><button class="m-btn" onclick="togglePause()">RESUME</button></div>
     <canvas id="gameCanvas"></canvas>
 
 <script>
 const canvas = document.getElementById("gameCanvas"), ctx = canvas.getContext("2d");
-const bcEl = document.getElementById("bc"), missionEl = document.getElementById("mission-tag"), overlay = document.getElementById("overlay");
-const speedBtn = document.getElementById("speed-btn");
+const bcEl = document.getElementById("bc"), missionEl = document.getElementById("mission-tag");
 
-let width, height, level = 1, totalBalls = 20, firing = false, isPaused = false, timeScale = 1;
+let audioCtx, width, height, level = 1, totalBalls = 20, firing = false, timeScale = 1;
 let bricks = [], balls = [], collectibles = [], isAiming = false, startX, startY, endX, endY;
-const cols = 9, pad = 3; // Even smaller bricks (9 columns)
+const cols = 9, pad = 3;
+
+function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+function playSFX(f, t, d, v = 0.05) { if (!audioCtx) return; let o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.type = t; o.frequency.setValueAtTime(f, audioCtx.currentTime); g.gain.setValueAtTime(v, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + d); o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + d); }
 
 function setup() {
     width = canvas.width = window.innerWidth;
@@ -38,49 +35,31 @@ function setup() {
     if(bricks.length === 0) spawnRow();
 }
 
-function togglePause() { isPaused = !isPaused; overlay.style.display = isPaused ? "flex" : "none"; }
-
 function spawnRow() {
     missionEl.innerText = "MISSION " + level;
     bcEl.innerText = totalBalls;
     bricks.forEach(b => b.row++);
     collectibles.forEach(c => c.row++);
-    
-    // Strict Game Over Line
-    if(bricks.some(b => b.row > 14)) {
-        alert("GAME OVER! Level: " + level);
-        location.reload();
-    }
+    if(bricks.some(b => b.row > 14)) location.reload();
 
-    // Force small brick size based on screen width ONLY
     const brickSize = (width - (pad * (cols + 1))) / cols;
-
     for(let i=0; i<cols; i++) {
         let rnd = Math.random();
         if(rnd > 0.5) {
-            bricks.push({col: i, row: 1, hp: level * 2, s: brickSize});
+            // UNIQUE SHAPES: 1 is Square, 2 is Triangle
+            bricks.push({col: i, row: 1, hp: level * 2, s: brickSize, shape: Math.random() > 0.7 ? 2 : 1});
         } else if(rnd > 0.9) {
-            collectibles.push({col: i, row: 1, s: brickSize, type: 'add'});
-        } else if(rnd > 0.95) {
-            bricks.push({col: i, row: 1, s: brickSize, type: 'laser'});
+            collectibles.push({col: i, row: 1, s: brickSize});
         }
     }
 }
 
-window.addEventListener("touchstart", e => { 
-    if(!firing && !isPaused) { 
-        isAiming = true; 
-        startX = e.touches[0].clientX; startY = e.touches[0].clientY; 
-        endX = startX; endY = startY;
-    }
-});
-
-window.addEventListener("touchmove", e => { 
-    if(isAiming) { endX = e.touches[0].clientX; endY = e.touches[0].clientY; }
-});
-
+window.addEventListener("touchstart", e => { if(!firing) { initAudio(); isAiming = true; startX = e.touches[0].clientX; startY = e.touches[0].clientY; }});
+window.addEventListener("touchmove", e => { if(isAiming) { endX = e.touches[0].clientX; endY = e.touches[0].clientY; }});
 window.addEventListener("touchend", () => {
-    if(isAiming && startY - endY > 30) fire(Math.atan2(startY - endY, startX - endX));
+    if(isAiming && startY - endY > 30) {
+        fire(Math.atan2(startY - endY, startX - endX));
+    }
     isAiming = false;
 });
 
@@ -89,43 +68,41 @@ function fire(angle) {
     const dx = Math.cos(angle) * 11, dy = Math.sin(angle) * 11;
     const itv = setInterval(() => {
         balls.push({x: width/2, y: height-40, dx: -dx, dy: -dy, active: true});
+        playSFX(800, 'sine', 0.02);
         if(++count >= totalBalls) clearInterval(itv);
     }, 50);
 }
 
 function update() {
-    if(isPaused) return;
-    speedBtn.innerText = "x" + (timeScale === 1 ? "1" : "2.5");
-    
     for(let t=0; t<timeScale; t++) {
         balls.forEach(ball => {
             if(!ball.active) return;
             ball.x += ball.dx; ball.y += ball.dy;
-            
-            if(ball.x < 4 || ball.x > width-4) ball.dx *= -1;
-            if(ball.y < 50) ball.dy *= -1;
+            if(ball.x < 4 || ball.x > width-4) { ball.dx *= -1; playSFX(400, 'sine', 0.05); }
+            if(ball.y < 50) { ball.dy *= -1; playSFX(400, 'sine', 0.05); }
+
+            // BOTTOM COLLISION (Stop balls from going under screen)
+            if(ball.y > height - 40) {
+                ball.y = height - 40;
+                ball.active = false;
+            }
 
             bricks.forEach((b, i) => {
                 let bx = b.col * (b.s + pad) + pad, by = b.row * (b.s + pad) + 90;
                 if(ball.x > bx && ball.x < bx+b.s && ball.y > by && ball.y < by+b.s) {
-                    if(b.type !== 'laser') {
-                        if (ball.x < bx + 3 || ball.x > bx + b.s - 3) ball.dx *= -1; else ball.dy *= -1;
-                        b.hp--; if(b.hp <= 0) bricks.splice(i, 1);
-                    } else {
-                        bricks = bricks.filter(other => other.row !== b.row);
-                        bricks.splice(i, 1);
-                    }
+                    ball.dy *= -1; b.hp--;
+                    playSFX(600 + (b.hp*5), 'square', 0.03);
+                    if(b.hp <= 0) bricks.splice(i, 1);
                 }
             });
 
             collectibles.forEach((c, i) => {
-                let cx = c.col * (c.s + pad) + pad + c.s/2, cy = c.row * (c.s + pad) + 90 + c.s/2;
-                if(Math.hypot(ball.x - cx, ball.y - cy) < 12) {
+                let cx = c.col*(c.s+pad)+pad+c.s/2, cy = c.row*(c.s+pad)+90+c.s/2;
+                if(Math.hypot(ball.x - cx, ball.y - cy) < 15) {
                     totalBalls++; bcEl.innerText = totalBalls; collectibles.splice(i, 1);
+                    playSFX(1200, 'sine', 0.2);
                 }
             });
-
-            if (ball.y > height) ball.active = false;
         });
     }
     if(firing && balls.every(b => !b.active)) { balls = []; firing = false; level++; spawnRow(); }
@@ -133,34 +110,28 @@ function update() {
 
 function draw() {
     ctx.fillStyle = "#000"; ctx.fillRect(0,0,width,height);
-    
     if(isAiming) {
         ctx.beginPath(); ctx.setLineDash([3, 6]); ctx.moveTo(width/2, height-40);
         let angle = Math.atan2(startY - endY, startX - endX);
         ctx.lineTo(width/2 - Math.cos(angle)*600, height-40 - Math.sin(angle)*600);
-        ctx.strokeStyle = "rgba(255,255,255,0.3)"; ctx.stroke(); ctx.setLineDash([]);
+        ctx.strokeStyle = "#fff"; ctx.stroke(); ctx.setLineDash([]);
     }
-
     bricks.forEach(b => {
         let bx = b.col*(b.s+pad)+pad, by = b.row*(b.s+pad)+90;
-        ctx.fillStyle = b.type === 'laser' ? '#00ff00' : `hsl(${220 + b.hp % 80}, 70%, 50%)`;
-        ctx.beginPath(); ctx.roundRect(bx, by, b.s, b.s, 3); ctx.fill();
-        ctx.strokeStyle = "rgba(255,255,255,0.05)"; ctx.stroke();
-        if(b.type !== 'laser') {
-            ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.font = "bold 10px Arial";
-            ctx.fillText(b.hp, bx+b.s/2, by+b.s/2+4);
+        ctx.fillStyle = `hsl(${220 + b.hp % 80}, 70%, 50%)`;
+        if(b.shape === 1) { ctx.beginPath(); ctx.roundRect(bx, by, b.s, b.s, 4); ctx.fill(); }
+        else { // TRIANGLE BRICK
+            ctx.beginPath(); ctx.moveTo(bx, by + b.s); ctx.lineTo(bx + b.s/2, by); ctx.lineTo(bx + b.s, by + b.s); ctx.closePath(); ctx.fill();
         }
+        ctx.fillStyle = "#fff"; ctx.font = "bold 10px Arial"; ctx.fillText(b.hp, bx+b.s/2, by+b.s/2+4);
     });
-
     collectibles.forEach(c => {
         let cx = c.col*(c.s+pad)+pad+c.s/2, cy = c.row*(c.s+pad)+90+c.s/2;
         ctx.strokeStyle = "#fff"; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI*2); ctx.stroke();
         ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI*2); ctx.fill();
     });
-
-    ctx.fillStyle = "#fff"; balls.forEach(b => { if(b.active) { ctx.beginPath(); ctx.arc(b.x, b.y, 3, 0, Math.PI*2); ctx.fill(); }});
-    ctx.fillStyle = "#444"; ctx.beginPath(); ctx.arc(width/2, height-40, 8, 0, Math.PI*2); ctx.fill();
-
+    ctx.fillStyle = "#fff"; balls.forEach(b => { if(b.active) { ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI*2); ctx.fill(); }});
+    ctx.fillStyle = "#333"; ctx.beginPath(); ctx.arc(width/2, height-40, 8, 0, Math.PI*2); ctx.fill();
     update(); requestAnimationFrame(draw);
 }
 window.addEventListener("resize", setup);
