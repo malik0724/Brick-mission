@@ -2,18 +2,19 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Brick Mission: Ultimate</title>
+    <title>Brick Mission: Pro Quality</title>
     <style>
-        body { background: #000; margin: 0; overflow: hidden; font-family: sans-serif; touch-action: none; color: white; }
+        body { background: #050505; margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; touch-action: none; color: white; }
         canvas { display: block; }
-        #top-bar { position: absolute; top: 0; width: 100%; height: 45px; background: #111; display: flex; justify-content: space-around; align-items: center; border-bottom: 1px solid #333; z-index: 10; }
-        #stats { position: absolute; top: 50px; width: 100%; text-align: center; color: #0ff; font-size: 12px; font-weight: bold; }
+        #top-bar { position: absolute; top: 0; width: 100%; height: 50px; background: #111; display: flex; justify-content: space-around; align-items: center; border-bottom: 2px solid #333; z-index: 10; }
+        #stats { position: absolute; top: 60px; width: 100%; text-align: center; color: #0ff; font-size: 14px; font-weight: bold; text-shadow: 0 0 10px #0ff; }
+        .ui-btn { background: #222; border: 1px solid #444; color: #fff; padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; }
     </style>
 </head>
 <body>
     <div id="top-bar">
         <div id="mission-tag">MISSION 1</div>
-        <div onclick="timeScale = timeScale === 1 ? 2.5 : 1" style="color:#f0f; font-weight:bold;">SPEED x1</div>
+        <button class="ui-btn" onclick="timeScale = timeScale === 1 ? 2 : 1">SPEED x1</button>
     </div>
     <div id="stats">BALLS: <span id="bc">20</span></div>
     <canvas id="gameCanvas"></canvas>
@@ -24,10 +25,11 @@ const bcEl = document.getElementById("bc"), missionEl = document.getElementById(
 
 let audioCtx, width, height, level = 1, totalBalls = 20, firing = false, timeScale = 1;
 let bricks = [], balls = [], collectibles = [], isAiming = false, startX, startY, endX, endY;
-const cols = 9, pad = 3;
+const cols = 8, pad = 4, borderSize = 10;
 
+// --- AUDIO ---
 function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-function playSFX(f, t, d, v = 0.05) { if (!audioCtx) return; let o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.type = t; o.frequency.setValueAtTime(f, audioCtx.currentTime); g.gain.setValueAtTime(v, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + d); o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + d); }
+function playSFX(f, t, d, v = 0.03) { if (!audioCtx) return; let o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.type = t; o.frequency.setValueAtTime(f, audioCtx.currentTime); g.gain.setValueAtTime(v, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + d); o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + d); }
 
 function setup() {
     width = canvas.width = window.innerWidth;
@@ -40,14 +42,13 @@ function spawnRow() {
     bcEl.innerText = totalBalls;
     bricks.forEach(b => b.row++);
     collectibles.forEach(c => c.row++);
-    if(bricks.some(b => b.row > 14)) location.reload();
+    if(bricks.some(b => b.row > 13)) location.reload();
 
-    const brickSize = (width - (pad * (cols + 1))) / cols;
+    const brickSize = (width - (borderSize * 2) - (pad * (cols + 1))) / cols;
     for(let i=0; i<cols; i++) {
         let rnd = Math.random();
         if(rnd > 0.5) {
-            // UNIQUE SHAPES: 1 is Square, 2 is Triangle
-            bricks.push({col: i, row: 1, hp: level * 2, s: brickSize, shape: Math.random() > 0.7 ? 2 : 1});
+            bricks.push({col: i, row: 1, hp: level * 2, s: brickSize, shape: Math.random() > 0.8 ? 2 : 1});
         } else if(rnd > 0.9) {
             collectibles.push({col: i, row: 1, s: brickSize});
         }
@@ -65,12 +66,13 @@ window.addEventListener("touchend", () => {
 
 function fire(angle) {
     firing = true; let count = 0;
-    const dx = Math.cos(angle) * 11, dy = Math.sin(angle) * 11;
+    // DRAMATICALLY REDUCED SPEED: Set to 6 instead of 11
+    const dx = Math.cos(angle) * 6, dy = Math.sin(angle) * 6;
     const itv = setInterval(() => {
-        balls.push({x: width/2, y: height-40, dx: -dx, dy: -dy, active: true});
-        playSFX(800, 'sine', 0.02);
+        balls.push({x: width/2, y: height - 50, dx: -dx, dy: -dy, active: true});
+        playSFX(1000, 'sine', 0.02);
         if(++count >= totalBalls) clearInterval(itv);
-    }, 50);
+    }, 80);
 }
 
 function update() {
@@ -78,29 +80,26 @@ function update() {
         balls.forEach(ball => {
             if(!ball.active) return;
             ball.x += ball.dx; ball.y += ball.dy;
-            if(ball.x < 4 || ball.x > width-4) { ball.dx *= -1; playSFX(400, 'sine', 0.05); }
-            if(ball.y < 50) { ball.dy *= -1; playSFX(400, 'sine', 0.05); }
 
-            // BOTTOM COLLISION (Stop balls from going under screen)
-            if(ball.y > height - 40) {
-                ball.y = height - 40;
-                ball.active = false;
-            }
+            // BORDER COLLISION (4 SIDES)
+            if(ball.x < borderSize + 4 || ball.x > width - borderSize - 4) { ball.dx *= -1; playSFX(400, 'sine', 0.05); }
+            if(ball.y < 50 + borderSize) { ball.dy *= -1; playSFX(400, 'sine', 0.05); }
+            if(ball.y > height - 45) { ball.y = height - 45; ball.active = false; }
 
             bricks.forEach((b, i) => {
-                let bx = b.col * (b.s + pad) + pad, by = b.row * (b.s + pad) + 90;
+                let bx = b.col * (b.s + pad) + pad + borderSize, by = b.row * (b.s + pad) + 100;
                 if(ball.x > bx && ball.x < bx+b.s && ball.y > by && ball.y < by+b.s) {
                     ball.dy *= -1; b.hp--;
-                    playSFX(600 + (b.hp*5), 'square', 0.03);
+                    playSFX(600 + (b.hp*2), 'square', 0.03);
                     if(b.hp <= 0) bricks.splice(i, 1);
                 }
             });
 
             collectibles.forEach((c, i) => {
-                let cx = c.col*(c.s+pad)+pad+c.s/2, cy = c.row*(c.s+pad)+90+c.s/2;
+                let cx = c.col*(c.s+pad)+pad+borderSize+c.s/2, cy = c.row*(c.s+pad)+100+c.s/2;
                 if(Math.hypot(ball.x - cx, ball.y - cy) < 15) {
                     totalBalls++; bcEl.innerText = totalBalls; collectibles.splice(i, 1);
-                    playSFX(1200, 'sine', 0.2);
+                    playSFX(1500, 'sine', 0.2);
                 }
             });
         });
@@ -109,29 +108,39 @@ function update() {
 }
 
 function draw() {
-    ctx.fillStyle = "#000"; ctx.fillRect(0,0,width,height);
+    ctx.fillStyle = "#050505"; ctx.fillRect(0,0,width,height);
+
+    // DRAW 4-SIDE BORDER
+    ctx.strokeStyle = "#333"; ctx.lineWidth = borderSize;
+    ctx.strokeRect(borderSize/2, 50 + borderSize/2, width - borderSize, height - 90);
+
     if(isAiming) {
-        ctx.beginPath(); ctx.setLineDash([3, 6]); ctx.moveTo(width/2, height-40);
+        ctx.beginPath(); ctx.setLineDash([4, 8]); ctx.moveTo(width/2, height - 50);
         let angle = Math.atan2(startY - endY, startX - endX);
-        ctx.lineTo(width/2 - Math.cos(angle)*600, height-40 - Math.sin(angle)*600);
-        ctx.strokeStyle = "#fff"; ctx.stroke(); ctx.setLineDash([]);
+        ctx.lineTo(width/2 - Math.cos(angle)*600, height-50 - Math.sin(angle)*600);
+        ctx.strokeStyle = "rgba(0, 210, 255, 0.4)"; ctx.stroke(); ctx.setLineDash([]);
     }
+
     bricks.forEach(b => {
-        let bx = b.col*(b.s+pad)+pad, by = b.row*(b.s+pad)+90;
-        ctx.fillStyle = `hsl(${220 + b.hp % 80}, 70%, 50%)`;
-        if(b.shape === 1) { ctx.beginPath(); ctx.roundRect(bx, by, b.s, b.s, 4); ctx.fill(); }
-        else { // TRIANGLE BRICK
-            ctx.beginPath(); ctx.moveTo(bx, by + b.s); ctx.lineTo(bx + b.s/2, by); ctx.lineTo(bx + b.s, by + b.s); ctx.closePath(); ctx.fill();
-        }
+        let bx = b.col*(b.s+pad)+pad+borderSize, by = b.row*(b.s+pad)+100;
+        // 3D BEVEL EFFECT
+        ctx.fillStyle = `hsl(${210 + b.hp % 60}, 80%, 30%)`; // Shadow
+        ctx.beginPath(); ctx.roundRect(bx, by, b.s, b.s, 4); ctx.fill();
+        ctx.fillStyle = `hsl(${210 + b.hp % 60}, 80%, 55%)`; // Face
+        ctx.beginPath(); ctx.roundRect(bx+1, by+1, b.s-3, b.s-3, 3); ctx.fill();
+        
         ctx.fillStyle = "#fff"; ctx.font = "bold 10px Arial"; ctx.fillText(b.hp, bx+b.s/2, by+b.s/2+4);
     });
+
     collectibles.forEach(c => {
-        let cx = c.col*(c.s+pad)+pad+c.s/2, cy = c.row*(c.s+pad)+90+c.s/2;
-        ctx.strokeStyle = "#fff"; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI*2); ctx.stroke();
+        let cx = c.col*(c.s+pad)+pad+borderSize+c.s/2, cy = c.row*(c.s+pad)+100+c.s/2;
+        ctx.strokeStyle = "#0f0"; ctx.beginPath(); ctx.arc(cx, cy, 10, 0, Math.PI*2); ctx.stroke();
         ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI*2); ctx.fill();
     });
+
     ctx.fillStyle = "#fff"; balls.forEach(b => { if(b.active) { ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI*2); ctx.fill(); }});
-    ctx.fillStyle = "#333"; ctx.beginPath(); ctx.arc(width/2, height-40, 8, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = "#222"; ctx.beginPath(); ctx.arc(width/2, height-50, 10, 0, Math.PI*2); ctx.fill();
+
     update(); requestAnimationFrame(draw);
 }
 window.addEventListener("resize", setup);
