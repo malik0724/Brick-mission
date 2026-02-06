@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Brick Mission: Pro Quality</title>
+    <title>Brick Mission: Pro Precision</title>
     <style>
         body { background: #050505; margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; touch-action: none; color: white; }
         canvas { display: block; }
@@ -25,9 +25,9 @@ const bcEl = document.getElementById("bc"), missionEl = document.getElementById(
 
 let audioCtx, width, height, level = 1, totalBalls = 20, firing = false, timeScale = 1;
 let bricks = [], balls = [], collectibles = [], isAiming = false, startX, startY, endX, endY;
+let currentAngle = 0; // For smooth aiming
 const cols = 8, pad = 4, borderSize = 10;
 
-// --- AUDIO ---
 function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
 function playSFX(f, t, d, v = 0.03) { if (!audioCtx) return; let o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.type = t; o.frequency.setValueAtTime(f, audioCtx.currentTime); g.gain.setValueAtTime(v, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + d); o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + d); }
 
@@ -55,10 +55,27 @@ function spawnRow() {
     }
 }
 
-window.addEventListener("touchstart", e => { if(!firing) { initAudio(); isAiming = true; startX = e.touches[0].clientX; startY = e.touches[0].clientY; }});
-window.addEventListener("touchmove", e => { if(isAiming) { endX = e.touches[0].clientX; endY = e.touches[0].clientY; }});
+window.addEventListener("touchstart", e => { 
+    if(!firing) { 
+        initAudio(); 
+        isAiming = true; 
+        startX = e.touches[0].clientX; 
+        startY = e.touches[0].clientY; 
+    }
+});
+
+window.addEventListener("touchmove", e => { 
+    if(isAiming) { 
+        // Reduced sensitivity: divide movement by 2
+        let tempEndX = e.touches[0].clientX;
+        let tempEndY = e.touches[0].clientY;
+        endX = startX + (tempEndX - startX) * 0.5;
+        endY = startY + (tempEndY - startY) * 0.5;
+    }
+});
+
 window.addEventListener("touchend", () => {
-    if(isAiming && startY - endY > 30) {
+    if(isAiming && startY - endY > 20) {
         fire(Math.atan2(startY - endY, startX - endX));
     }
     isAiming = false;
@@ -66,13 +83,13 @@ window.addEventListener("touchend", () => {
 
 function fire(angle) {
     firing = true; let count = 0;
-    // DRAMATICALLY REDUCED SPEED: Set to 6 instead of 11
-    const dx = Math.cos(angle) * 6, dy = Math.sin(angle) * 6;
+    // Ball Speed increased to 9
+    const dx = Math.cos(angle) * 9, dy = Math.sin(angle) * 9;
     const itv = setInterval(() => {
-        balls.push({x: width/2, y: height - 50, dx: -dx, dy: -dy, active: true});
+        balls.push({x: width/2, y: height - 60, dx: -dx, dy: -dy, active: true});
         playSFX(1000, 'sine', 0.02);
         if(++count >= totalBalls) clearInterval(itv);
-    }, 80);
+    }, 70);
 }
 
 function update() {
@@ -81,16 +98,20 @@ function update() {
             if(!ball.active) return;
             ball.x += ball.dx; ball.y += ball.dy;
 
-            // BORDER COLLISION (4 SIDES)
             if(ball.x < borderSize + 4 || ball.x > width - borderSize - 4) { ball.dx *= -1; playSFX(400, 'sine', 0.05); }
             if(ball.y < 50 + borderSize) { ball.dy *= -1; playSFX(400, 'sine', 0.05); }
-            if(ball.y > height - 45) { ball.y = height - 45; ball.active = false; }
+            
+            // FLOOR COLLISION: Now 60px from bottom (above border)
+            if(ball.y > height - 60) { 
+                ball.y = height - 60; 
+                ball.active = false; 
+            }
 
             bricks.forEach((b, i) => {
                 let bx = b.col * (b.s + pad) + pad + borderSize, by = b.row * (b.s + pad) + 100;
                 if(ball.x > bx && ball.x < bx+b.s && ball.y > by && ball.y < by+b.s) {
                     ball.dy *= -1; b.hp--;
-                    playSFX(600 + (b.hp*2), 'square', 0.03);
+                    playSFX(600, 'square', 0.03);
                     if(b.hp <= 0) bricks.splice(i, 1);
                 }
             });
@@ -99,7 +120,6 @@ function update() {
                 let cx = c.col*(c.s+pad)+pad+borderSize+c.s/2, cy = c.row*(c.s+pad)+100+c.s/2;
                 if(Math.hypot(ball.x - cx, ball.y - cy) < 15) {
                     totalBalls++; bcEl.innerText = totalBalls; collectibles.splice(i, 1);
-                    playSFX(1500, 'sine', 0.2);
                 }
             });
         });
@@ -110,25 +130,25 @@ function update() {
 function draw() {
     ctx.fillStyle = "#050505"; ctx.fillRect(0,0,width,height);
 
-    // DRAW 4-SIDE BORDER
+    // BORDER
     ctx.strokeStyle = "#333"; ctx.lineWidth = borderSize;
     ctx.strokeRect(borderSize/2, 50 + borderSize/2, width - borderSize, height - 90);
 
+    // VISUAL FLOOR LINE
+    ctx.strokeStyle = "#444"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(borderSize, height - 60); ctx.lineTo(width - borderSize, height - 60); ctx.stroke();
+
     if(isAiming) {
-        ctx.beginPath(); ctx.setLineDash([4, 8]); ctx.moveTo(width/2, height - 50);
+        ctx.beginPath(); ctx.setLineDash([4, 8]); ctx.moveTo(width/2, height - 60);
         let angle = Math.atan2(startY - endY, startX - endX);
-        ctx.lineTo(width/2 - Math.cos(angle)*600, height-50 - Math.sin(angle)*600);
-        ctx.strokeStyle = "rgba(0, 210, 255, 0.4)"; ctx.stroke(); ctx.setLineDash([]);
+        ctx.lineTo(width/2 - Math.cos(angle)*500, height-60 - Math.sin(angle)*500);
+        ctx.strokeStyle = "#0ff"; ctx.stroke(); ctx.setLineDash([]);
     }
 
     bricks.forEach(b => {
         let bx = b.col*(b.s+pad)+pad+borderSize, by = b.row*(b.s+pad)+100;
-        // 3D BEVEL EFFECT
-        ctx.fillStyle = `hsl(${210 + b.hp % 60}, 80%, 30%)`; // Shadow
+        ctx.fillStyle = `hsl(${210 + b.hp % 60}, 80%, 40%)`;
         ctx.beginPath(); ctx.roundRect(bx, by, b.s, b.s, 4); ctx.fill();
-        ctx.fillStyle = `hsl(${210 + b.hp % 60}, 80%, 55%)`; // Face
-        ctx.beginPath(); ctx.roundRect(bx+1, by+1, b.s-3, b.s-3, 3); ctx.fill();
-        
         ctx.fillStyle = "#fff"; ctx.font = "bold 10px Arial"; ctx.fillText(b.hp, bx+b.s/2, by+b.s/2+4);
     });
 
@@ -139,7 +159,7 @@ function draw() {
     });
 
     ctx.fillStyle = "#fff"; balls.forEach(b => { if(b.active) { ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI*2); ctx.fill(); }});
-    ctx.fillStyle = "#222"; ctx.beginPath(); ctx.arc(width/2, height-50, 10, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = "#0ff"; ctx.beginPath(); ctx.arc(width/2, height-60, 10, 0, Math.PI*2); ctx.fill();
 
     update(); requestAnimationFrame(draw);
 }
