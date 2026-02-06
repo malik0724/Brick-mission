@@ -2,26 +2,31 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Brick Mission: Ball Blast Sound Edition</title>
+    <title>Brick Mission: Pro Edition</title>
     <style>
-        body { background: #000; margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; touch-action: none; color: white; }
-        canvas { display: block; }
-        #ui { position: absolute; top: 20px; width: 100%; display: flex; justify-content: space-around; font-weight: bold; color: #fff; pointer-events: none; z-index: 10; }
-        .stat { background: rgba(255,255,255,0.1); padding: 5px 15px; border-radius: 20px; border: 1px solid #444; }
-        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; text-align: center; }
-        .btn { padding: 15px 50px; font-size: 20px; font-weight: bold; border-radius: 40px; border: none; background: #00d2ff; color: #000; margin-top: 20px; cursor: pointer; }
+        body { background: #1a1a1a; margin: 0; overflow: hidden; font-family: sans-serif; touch-action: none; color: white; }
+        canvas { display: block; background: #111; }
+        #top-bar { position: absolute; top: 0; width: 100%; height: 50px; background: rgba(0,0,0,0.8); display: flex; justify-content: space-between; align-items: center; padding: 0 15px; box-sizing: border-box; z-index: 10; border-bottom: 2px solid #333; }
+        .ui-btn { background: #333; border: 1px solid #555; color: white; padding: 5px 10px; border-radius: 5px; font-weight: bold; }
+        #stats { position: absolute; top: 60px; width: 100%; text-align: center; pointer-events: none; font-size: 14px; color: #888; }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
+        .menu-btn { width: 200px; padding: 15px; margin: 10px; background: #00d2ff; color: black; border: none; border-radius: 30px; font-weight: bold; font-size: 18px; }
     </style>
 </head>
 <body>
 
-    <div id="ui">
-        <div class="stat">BALLS: <span id="ball-count">10</span></div>
-        <div class="stat">STAGE: <span id="level-display">1</span></div>
+    <div id="top-bar">
+        <button class="ui-btn" onclick="togglePause()">⏸</button>
+        <div id="level-title">MISSION 1</div>
+        <button class="ui-btn" onclick="toggleSpeed()">x1</button>
     </div>
 
+    <div id="stats">BALLS: <span id="ball-count">10</span></div>
+
     <div id="overlay">
-        <h1 id="status">MISSION FAILED</h1>
-        <button class="btn" onclick="location.reload()">RETRY MISSION</button>
+        <h1 id="status-text">PAUSED</h1>
+        <button class="menu-btn" onclick="togglePause()">RESUME</button>
+        <button class="menu-btn" onclick="location.reload()">RESTART</button>
     </div>
 
     <canvas id="gameCanvas"></canvas>
@@ -30,64 +35,78 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 const ballEl = document.getElementById("ball-count");
-const levelEl = document.getElementById("level-display");
+const levelEl = document.getElementById("level-title");
 const overlay = document.getElementById("overlay");
+const statusText = document.getElementById("status-text");
 
-let audioCtx, width, height, gameRunning = true;
-let bricks = [], balls = [], collectibles = [], level = 1, currentBalls = 10;
+let width, height, gameRunning = true, isPaused = false, timeScale = 1;
+let bricks = [], balls = [], collectibles = [], level = 1, totalBalls = 10;
 let firing = false, isAiming = false, startX, startY, endX, endY;
-const rowCount = 10, colCount = 7, brickH = 35;
+let shootX, shootY; 
 
-// --- AUDIO ENGINE ---
-function initAudio() {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-}
-
-function playSFX(freq, type, duration, vol = 0.05) {
-    if (!audioCtx) return;
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-    osc.connect(gain); gain.connect(audioCtx.destination);
-    osc.start(); osc.stop(audioCtx.currentTime + duration);
-}
+const cols = 7, rows = 12;
 
 function init() {
     width = canvas.width = window.innerWidth;
     height = canvas.height = window.innerHeight;
-    spawnBricks();
+    shootX = width / 2;
+    shootY = height - 60;
+    spawnLevel();
 }
 
-function spawnBricks() {
-    levelEl.innerText = level;
-    ballEl.innerText = currentBalls;
-    bricks.forEach(b => b.row++);
-    collectibles.forEach(c => c.row++);
+function togglePause() {
+    isPaused = !isPaused;
+    overlay.style.display = isPaused ? "flex" : "none";
+    statusText.innerText = "PAUSED";
+}
+
+function toggleSpeed() {
+    timeScale = timeScale === 1 ? 2 : 1;
+    event.target.innerText = "x" + timeScale;
+}
+
+function spawnLevel() {
+    levelEl.innerText = "MISSION " + level;
+    ballEl.innerText = totalBalls;
     
-    if (bricks.some(b => b.row >= rowCount - 1)) {
+    // Check for game over (bricks too low)
+    if (bricks.some(b => b.row >= rows - 1)) {
         gameRunning = false;
+        statusText.innerText = "MISSION FAILED";
         overlay.style.display = "flex";
-        playSFX(100, 'sawtooth', 0.5); // Game Over Sound
         return;
     }
 
-    const padding = 4;
-    const brickW = (width - (padding * (colCount + 1))) / colCount;
-    for (let c = 0; c < colCount; c++) {
-        if (Math.random() > 0.5) {
-            bricks.push({ col: c, row: 1, hp: level * 2, w: brickW, h: brickH, padding: padding });
-        } else if (Math.random() > 0.85) {
-            collectibles.push({ col: c, row: 1, w: brickW, h: brickH, padding: padding });
+    // Move everything down
+    bricks.forEach(b => b.row++);
+    collectibles.forEach(c => c.row++);
+
+    const padding = 3;
+    const size = (width - (padding * (cols + 1))) / cols;
+    const isBoss = level % 5 === 0;
+
+    if (isBoss) {
+        // Special Boss Layout
+        for(let i=1; i<cols-1; i++) {
+            bricks.push({ col: i, row: 1, hp: level * 10, size: size, type: 'boss', color: '#ff0055' });
+        }
+    } else {
+        for (let i = 0; i < cols; i++) {
+            let rnd = Math.random();
+            if (rnd > 0.4) {
+                bricks.push({ col: i, row: 1, hp: level * 2, size: size, type: 'norm', color: `hsl(${level * 15}, 70%, 50%)` });
+            } else if (rnd > 0.1) {
+                collectibles.push({ col: i, row: 1, size: size, type: 'ball' });
+            } else if (rnd > 0.05) {
+                bricks.push({ col: i, row: 1, size: size, type: 'laser_v' });
+            }
         }
     }
 }
 
+// Controls
 window.addEventListener("touchstart", e => {
-    if (firing || !gameRunning) return;
-    initAudio(); // Initialize audio on first touch
+    if (firing || isPaused) return;
     isAiming = true;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
@@ -102,84 +121,117 @@ window.addEventListener("touchmove", e => {
 window.addEventListener("touchend", () => {
     if (!isAiming) return;
     isAiming = false;
-    if (endY < startY - 20) {
+    if (startY - endY > 30) {
         let angle = Math.atan2(startY - endY, startX - endX);
-        fireBalls(angle);
+        fire(angle);
     }
 });
 
-function fireBalls(angle) {
+function fire(angle) {
     firing = true;
     let count = 0;
-    const dx = Math.cos(angle) * 9;
-    const dy = Math.sin(angle) * 9;
-    const timer = setInterval(() => {
-        balls.push({ x: width/2, y: height-50, dx: -dx, dy: -dy, active: true });
-        playSFX(1200, 'sine', 0.02, 0.02); // Shoot Sound
+    const dx = Math.cos(angle) * 8;
+    const dy = Math.sin(angle) * 8;
+    const interval = setInterval(() => {
+        if (count >= totalBalls) { clearInterval(interval); return; }
+        balls.push({ x: shootX, y: shootY, dx: -dx, dy: -dy, active: true });
         count++;
-        if (count >= currentBalls) clearInterval(timer);
-    }, 60);
+    }, 50);
 }
 
 function update() {
-    if (!gameRunning) return;
-    balls.forEach(ball => {
-        if (!ball.active) return;
-        ball.x += ball.dx; ball.y += ball.dy;
-        if (ball.x < 5 || ball.x > width-5) { ball.dx *= -1; playSFX(400, 'sine', 0.05); }
-        if (ball.y < 80) { ball.dy *= -1; playSFX(400, 'sine', 0.05); }
+    if (!gameRunning || isPaused) return;
 
-        bricks.forEach((b, i) => {
-            const bx = b.col * (b.w + b.padding) + b.padding;
-            const by = b.row * (b.h + b.padding) + 120;
-            if (ball.x > bx && ball.x < bx + b.w && ball.y > by && ball.y < by + b.h) {
-                ball.dy *= -1; b.hp--;
-                playSFX(800 + (b.hp * 2), 'square', 0.03); // Hit Sound
-                if (b.hp <= 0) bricks.splice(i, 1);
-            }
-        });
+    for (let s = 0; s < timeScale; s++) { // Handle x2 speed
+        balls.forEach(ball => {
+            if (!ball.active) return;
+            ball.x += ball.dx; ball.y += ball.dy;
 
-        collectibles.forEach((c, i) => {
-            const cx = c.col * (c.w + c.padding) + c.padding + c.w/2;
-            const cy = c.row * (c.h + c.padding) + 120 + c.h/2;
-            if (Math.hypot(ball.x - cx, ball.y - cy) < 15) {
-                currentBalls++; collectibles.splice(i, 1);
-                playSFX(1500, 'sine', 0.2, 0.1); // Collect Sound
-            }
+            if (ball.x < 5 || ball.x > width - 5) ball.dx *= -1;
+            if (ball.y < 55) ball.dy *= -1;
+
+            bricks.forEach((b, i) => {
+                let bx = b.col * (b.size + 3) + 3;
+                let by = b.row * (b.size + 3) + 80;
+                
+                if (ball.x > bx && ball.x < bx + b.size && ball.y > by && ball.y < by + b.size) {
+                    if (b.type === 'norm' || b.type === 'boss') {
+                        // Reflect ball
+                        if (ball.x < bx + 5 || ball.x > bx + b.size - 5) ball.dx *= -1; else ball.dy *= -1;
+                        b.hp--;
+                        if (b.hp <= 0) bricks.splice(i, 1);
+                    } else if (b.type === 'laser_v') {
+                        // Activate Vertical Laser
+                        bricks = bricks.filter(other => other.col !== b.col);
+                        bricks.splice(i, 1);
+                    }
+                }
+            });
+
+            collectibles.forEach((c, i) => {
+                let cx = c.col * (c.size + 3) + 3 + c.size/2;
+                let cy = c.row * (c.size + 3) + 80 + c.size/2;
+                if (Math.hypot(ball.x - cx, ball.y - cy) < 15) {
+                    totalBalls++; ballEl.innerText = totalBalls;
+                    collectibles.splice(i, 1);
+                }
+            });
+
+            if (ball.y > height) ball.active = false;
         });
-        if (ball.y > height) ball.active = false;
-    });
+    }
 
     if (firing && balls.every(b => !b.active)) {
-        balls = []; firing = false; level++; spawnBricks();
+        balls = []; firing = false; level++; spawnLevel();
     }
 }
 
 function draw() {
-    ctx.fillStyle = "#000"; ctx.fillRect(0,0,width,height);
+    ctx.fillStyle = "#111"; ctx.fillRect(0, 0, width, height);
+
     if (isAiming) {
-        ctx.setLineDash([5, 10]); ctx.beginPath(); ctx.moveTo(width/2, height-50);
+        ctx.beginPath(); ctx.setLineDash([5, 10]);
         let angle = Math.atan2(startY - endY, startX - endX);
-        ctx.lineTo(width/2 - Math.cos(angle)*400, height-50 - Math.sin(angle)*400);
-        ctx.strokeStyle = "#fff"; ctx.stroke();
+        ctx.moveTo(shootX, shootY);
+        ctx.lineTo(shootX - Math.cos(angle) * 500, shootY - Math.sin(angle) * 500);
+        ctx.strokeStyle = "rgba(255,255,255,0.4)"; ctx.stroke();
+        ctx.setLineDash([]);
     }
+
     bricks.forEach(b => {
-        const bx = b.col * (b.w + b.padding) + b.padding;
-        const by = b.row * (b.h + b.padding) + 120;
-        ctx.fillStyle = `hsl(${280 + (b.hp % 60)}, 70%, 50%)`;
-        ctx.beginPath(); ctx.roundRect(bx, by, b.w, b.h, 6); ctx.fill();
-        ctx.fillStyle = "#fff"; ctx.textAlign = "center";
-        ctx.font = "bold 14px Arial"; ctx.fillText(b.hp, bx + b.w/2, by + b.h/2 + 5);
+        let bx = b.col * (b.size + 3) + 3;
+        let by = b.row * (b.size + 3) + 80;
+        
+        if (b.type === 'norm' || b.type === 'boss') {
+            ctx.fillStyle = b.color;
+            ctx.beginPath(); ctx.roundRect(bx, by, b.size, b.size, 4); ctx.fill();
+            // 3D Highlight
+            ctx.strokeStyle = "rgba(255,255,255,0.3)"; ctx.stroke();
+            ctx.fillStyle = "white"; ctx.textAlign = "center";
+            ctx.font = b.type === 'boss' ? "bold 16px Arial" : "12px Arial";
+            ctx.fillText(b.hp, bx + b.size/2, by + b.size/2 + 5);
+        } else {
+            ctx.fillStyle = "#ffaa00";
+            ctx.beginPath(); ctx.arc(bx + b.size/2, by + b.size/2, 10, 0, Math.PI*2); ctx.fill();
+        }
     });
+
     collectibles.forEach(c => {
-        const cx = c.col * (c.w + c.padding) + c.padding + c.w/2;
-        const cy = c.row * (c.h + c.padding) + 120 + c.h/2;
-        ctx.fillStyle = "#0f0"; ctx.beginPath(); ctx.arc(cx, cy, 10, 0, Math.PI*2); ctx.fill();
+        let cx = c.col * (c.size + 3) + 3 + c.size/2;
+        let cy = c.row * (c.row + 3) + 80 + c.size/2;
+        ctx.strokeStyle = "#fff"; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI*2); ctx.stroke();
+        ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI*2); ctx.fill();
     });
-    ctx.fillStyle = "#fff";
-    balls.forEach(b => { if (b.active) { ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, Math.PI*2); ctx.fill(); } });
-    update(); requestAnimationFrame(draw);
+
+    ctx.fillStyle = "white";
+    balls.forEach(b => {
+        if (b.active) { ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI*2); ctx.fill(); }
+    });
+
+    update();
+    requestAnimationFrame(draw);
 }
+
 init(); draw();
 </script>
 </body>
