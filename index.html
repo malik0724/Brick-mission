@@ -2,49 +2,33 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Brick Mission: Stage Mode</title>
+    <title>Brick Mission: SafeZone</title>
     <style>
         body { background: #050505; margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; touch-action: none; color: white; }
         canvas { display: block; }
-        #top-bar { position: absolute; top: 0; width: 100%; height: 50px; background: #111; display: flex; justify-content: space-around; align-items: center; border-bottom: 2px solid #333; z-index: 10; }
-        #stats { position: absolute; top: 60px; width: 100%; text-align: center; color: #0ff; font-size: 14px; font-weight: bold; text-shadow: 0 0 10px #0ff; pointer-events: none; }
-        .ui-btn { background: #222; border: 1px solid #444; color: #fff; padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; }
-        
-        /* POPUPS */
-        .popup { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
-        .popup h1 { font-size: 30px; margin-bottom: 10px; text-shadow: 0 0 20px currentColor; }
-        .popup p { color: #ccc; margin-bottom: 30px; }
-        .big-btn { width: 200px; padding: 15px; font-size: 20px; font-weight: bold; border-radius: 30px; border: none; cursor: pointer; transform: scale(1); transition: transform 0.1s; }
-        .big-btn:active { transform: scale(0.95); }
-        .btn-next { background: #0f0; color: #000; box-shadow: 0 0 15px #0f0; }
-        .btn-retry { background: #f00; color: #fff; box-shadow: 0 0 15px #f00; }
-        .btn-resume { background: #0ff; color: #000; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        #top-bar { position: absolute; top: 0; width: 100%; height: 50px; background: rgba(20,20,20,0.9); display: flex; justify-content: space-between; align-items: center; padding: 0 15px; border-bottom: 2px solid #333; box-sizing: border-box; }
+        .stat { font-weight: bold; font-size: 14px; color: #0ff; text-shadow: 0 0 5px #0ff; }
+        #version { position: absolute; bottom: 10px; right: 10px; font-size: 10px; color: #555; }
+        .popup { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; pointer-events: auto; }
+        .btn { padding: 15px 40px; font-size: 18px; font-weight: bold; border-radius: 30px; border: none; background: #0f0; color: #000; margin-top: 20px; cursor: pointer; }
     </style>
 </head>
 <body>
+
     <div id="top-bar">
-        <div id="mission-tag">LEVEL 1</div>
-        <button class="ui-btn" onclick="timeScale = timeScale === 1 ? 2 : 1">SPEED x1</button>
-        <button class="ui-btn" onclick="togglePause()">PAUSE</button>
+        <div class="stat" id="mission-tag">LEVEL 1</div>
+        <div class="stat">BALLS: <span id="bc">10</span></div>
+        <div class="stat" style="font-size:10px; color:#888;">v2.0 SAFE</div>
     </div>
-    
-    <div id="stats">BALLS: <span id="bc">10</span></div>
 
     <div id="win-popup" class="popup">
-        <h1 style="color: #0f0;">CONGRATULATIONS!</h1>
-        <p>LEVEL CLEARED</p>
-        <button class="big-btn btn-next" onclick="nextLevel()">NEXT LEVEL</button>
+        <h1 style="color: #0f0;">CLEARED!</h1>
+        <button class="btn" onclick="nextLevel()">NEXT LEVEL</button>
     </div>
-
     <div id="lose-popup" class="popup">
-        <h1 style="color: #f00;">MISSION FAILED</h1>
-        <p>BRICKS REACHED THE BOTTOM</p>
-        <button class="big-btn btn-retry" onclick="restartLevel()">TRY AGAIN</button>
-    </div>
-
-    <div id="pause-popup" class="popup">
-        <h1 style="color: #0ff;">PAUSED</h1>
-        <button class="big-btn btn-resume" onclick="togglePause()">RESUME</button>
+        <h1 style="color: #f00;">FAILED!</h1>
+        <button class="btn" style="background:#f00; color:#fff;" onclick="restartLevel()">RETRY</button>
     </div>
 
     <canvas id="gameCanvas"></canvas>
@@ -52,213 +36,157 @@
 <script>
 const canvas = document.getElementById("gameCanvas"), ctx = canvas.getContext("2d");
 const bcEl = document.getElementById("bc"), missionEl = document.getElementById("mission-tag");
-const winPopup = document.getElementById("win-popup"), losePopup = document.getElementById("lose-popup"), pausePopup = document.getElementById("pause-popup");
+const winPopup = document.getElementById("win-popup"), losePopup = document.getElementById("lose-popup");
 
-let audioCtx, width, height, level = 1, totalBalls = 10, firing = false, timeScale = 1, isPaused = false;
+let audioCtx, width, height, level = 1, totalBalls = 10, firing = false;
 let bricks = [], balls = [], collectibles = [], isAiming = false, startX, startY, endX, endY;
-const cols = 8, pad = 4, borderSize = 10;
-let brickSize;
+// SAFE ZONE: We subtract 120px from the bottom to account for phone nav bars
+let bottomLimit; 
+const cols = 8, pad = 4, border = 5;
 
 function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-function playSFX(f, t, d, v = 0.03) { if (!audioCtx) return; let o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.type = t; o.frequency.setValueAtTime(f, audioCtx.currentTime); g.gain.setValueAtTime(v, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + d); o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + d); }
+function playSFX(f, t, d, v=0.05) { if(!audioCtx) return; let o=audioCtx.createOscillator(), g=audioCtx.createGain(); o.type=t; o.frequency.setValueAtTime(f, audioCtx.currentTime); g.gain.setValueAtTime(v, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime+d); o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+d); }
 
 function setup() {
     width = canvas.width = window.innerWidth;
     height = canvas.height = window.innerHeight;
-    brickSize = (width - (borderSize * 2) - (pad * (cols + 1))) / cols;
+    bottomLimit = height - 120; // THE FIX: Floor is 120px up
     if(bricks.length === 0) startLevel(1);
 }
 
 function startLevel(lvl) {
-    level = lvl;
-    missionEl.innerText = "LEVEL " + level;
-    bcEl.innerText = totalBalls;
-    winPopup.style.display = "none";
-    losePopup.style.display = "none";
-    firing = false;
-    balls = [];
-    bricks = [];
-    collectibles = [];
+    level = lvl; missionEl.innerText = "LEVEL " + level; bcEl.innerText = totalBalls;
+    winPopup.style.display = "none"; losePopup.style.display = "none";
+    firing = false; balls = []; bricks = []; collectibles = [];
     
-    // DIFFICULTY LOGIC
-    let rows, hpMult, complexShapes;
-    if (level <= 5) {
-        rows = 3 + Math.floor(level / 2); // Levels 1-5: 3 to 5 rows
-        hpMult = 1; // Easy HP
-        complexShapes = false; // Only squares
-    } else {
-        rows = 6 + Math.min(level - 5, 4); // Levels 6+: 6 to 10 rows
-        hpMult = 2; // Harder HP
-        complexShapes = true; // Triangles appear
-    }
+    let rows = 4 + Math.floor(level/3);
+    let brickW = (width - (border*2) - (pad*(cols+1))) / cols;
 
-    // GENERATE PATTERN
     for(let r=0; r<rows; r++) {
         for(let c=0; c<cols; c++) {
-            let rnd = Math.random();
-            let spawnChance = (level <= 5) ? 0.6 : 0.8; // More bricks in higher levels
-            
-            if(rnd < spawnChance) {
-                let hp = (level * hpMult) + r; // HP increases with rows
-                let shape = (complexShapes && Math.random() > 0.7) ? 2 : 1; // 2 = Triangle
-                bricks.push({col: c, row: r, hp: hp, s: brickSize, shape: shape});
-            } else if (rnd > 0.95) {
-                collectibles.push({col: c, row: r, s: brickSize});
+            if(Math.random() > 0.4) {
+                // 1=Square, 2=Triangle, 3=Circle
+                let shape = 1;
+                if(level > 2 && Math.random()>0.7) shape = 2;
+                if(level > 4 && Math.random()>0.8) shape = 3;
+                bricks.push({c: c, r: r, x: border + pad + c*(brickW+pad), y: 80 + r*(brickW+pad), w: brickW, h: brickW, hp: level+(r*2), shape: shape});
+            } else if(Math.random() > 0.9) {
+                collectibles.push({x: border + pad + c*(brickW+pad) + brickW/2, y: 80 + r*(brickW+pad) + brickW/2, r: 8, active: true});
             }
         }
     }
 }
 
-function nextLevel() { startLevel(level + 1); }
+function nextLevel() { startLevel(level+1); }
 function restartLevel() { totalBalls = 10; startLevel(level); }
-function togglePause() { isPaused = !isPaused; pausePopup.style.display = isPaused ? "flex" : "none"; }
 
-// INPUT HANDLING (PRE-AIMING ENABLED)
-window.addEventListener("touchstart", e => { 
-    if(!isPaused) { 
-        initAudio(); 
-        isAiming = true; 
-        startX = e.touches[0].clientX; startY = e.touches[0].clientY; 
-        endX = startX; endY = startY;
-    }
-});
-
-window.addEventListener("touchmove", e => { 
-    if(isAiming) { 
-        let tX = e.touches[0].clientX; let tY = e.touches[0].clientY;
-        endX = startX + (tX - startX) * 0.6; // Sensitivity
-        endY = startY + (tY - startY) * 0.6;
-    }
-});
-
+window.addEventListener("touchstart", e => { if(!firing) { initAudio(); isAiming = true; startX = e.touches[0].clientX; startY = e.touches[0].clientY; endX=startX; endY=startY; }});
+window.addEventListener("touchmove", e => { if(isAiming) { endX = e.touches[0].clientX; endY = e.touches[0].clientY; }});
 window.addEventListener("touchend", () => {
-    // Only fire if not already firing
-    if(isAiming && !firing && startY - endY > 30) {
-        fire(Math.atan2(startY - endY, startX - endX));
-    }
+    if(isAiming && startY - endY > 30) fire(Math.atan2(startY - endY, startX - endX));
     isAiming = false;
 });
 
 function fire(angle) {
     firing = true; let count = 0;
-    const speed = 9;
+    const speed = 10;
     const dx = Math.cos(angle) * speed, dy = Math.sin(angle) * speed;
-    const itv = setInterval(() => {
-        balls.push({x: width/2, y: height - 60, dx: -dx, dy: -dy, active: true});
-        playSFX(1000, 'sine', 0.02);
+    let itv = setInterval(() => {
+        balls.push({x: width/2, y: bottomLimit, dx: -dx, dy: -dy, active: true});
+        playSFX(800, 'sine', 0.02);
         if(++count >= totalBalls) clearInterval(itv);
     }, 60);
 }
 
 function update() {
-    if(isPaused) return;
+    if(!firing && bricks.length === 0 && balls.length === 0) { winPopup.style.display = "flex"; return; }
+    
+    balls.forEach(b => {
+        if(!b.active) return;
+        b.x += b.dx; b.y += b.dy;
 
-    // CHECK WIN CONDITION
-    if (!firing && bricks.length === 0) {
-        winPopup.style.display = "flex";
-        playSFX(600, 'triangle', 0.1);
-        playSFX(800, 'triangle', 0.1);
-        playSFX(1200, 'triangle', 0.2);
-        return;
-    }
-
-    for(let t=0; t<timeScale; t++) {
-        balls.forEach(ball => {
-            if(!ball.active) return;
-            ball.x += ball.dx; ball.y += ball.dy;
-
-            // Walls
-            if(ball.x < borderSize + 4 || ball.x > width - borderSize - 4) { ball.dx *= -1; playSFX(400, 'sine', 0.02); }
-            if(ball.y < 50 + borderSize) { ball.dy *= -1; playSFX(400, 'sine', 0.02); }
-            
-            // Floor (Catch Ball)
-            if(ball.y > height - 60) { ball.y = height - 60; ball.active = false; }
-
-            // Bricks
-            bricks.forEach((b, i) => {
-                let bx = b.col * (b.s + pad) + pad + borderSize, by = b.row * (b.s + pad) + 100;
-                if(ball.x > bx && ball.x < bx+b.s && ball.y > by && ball.y < by+b.s) {
-                    ball.dy *= -1; b.hp--;
-                    playSFX(500 + (b.hp*10), 'square', 0.03);
-                    if(b.hp <= 0) bricks.splice(i, 1);
-                }
-            });
-
-            // Collectibles
-            collectibles.forEach((c, i) => {
-                let cx = c.col*(c.s+pad)+pad+borderSize+c.s/2, cy = c.row*(c.s+pad)+100+c.s/2;
-                if(Math.hypot(ball.x - cx, ball.y - cy) < 15) {
-                    totalBalls++; bcEl.innerText = totalBalls; collectibles.splice(i, 1);
-                    playSFX(1500, 'sine', 0.1);
-                }
-            });
-        });
-    }
-
-    // ROUND OVER LOGIC
-    if(firing && balls.every(b => !b.active)) { 
-        balls = []; 
-        firing = false; 
+        // Walls
+        if(b.x < border || b.x > width-border) { b.dx *= -1; playSFX(300, 'sine', 0.02); }
+        if(b.y < 50) { b.dy *= -1; playSFX(300, 'sine', 0.02); }
         
-        // Move bricks down
-        bricks.forEach(b => b.row++);
-        collectibles.forEach(c => c.row++);
-        
-        // Check Loss
-        if(bricks.some(b => b.row * (b.s + pad) + 100 > height - 120)) {
-            losePopup.style.display = "flex";
+        // FLOOR LOGIC (The Fix)
+        if(b.y > bottomLimit) {
+            b.y = bottomLimit; b.active = false;
         }
+
+        // Bricks
+        bricks.forEach((br, i) => {
+            if(br.hp <= 0) return;
+            // Simple AABB collision for stability
+            if(b.x > br.x && b.x < br.x+br.w && b.y > br.y && b.y < br.y+br.h) {
+                // Bounce based on overlap
+                let overlapX = Math.min(Math.abs(b.x - br.x), Math.abs(b.x - (br.x+br.w)));
+                let overlapY = Math.min(Math.abs(b.y - br.y), Math.abs(b.y - (br.y+br.h)));
+                if(overlapX < overlapY) b.dx *= -1; else b.dy *= -1;
+                
+                br.hp--;
+                playSFX(400 + (br.hp*20), 'square', 0.05);
+                if(br.hp <= 0) bricks.splice(i, 1);
+            }
+        });
+
+        // Collectibles
+        collectibles.forEach((c, i) => {
+            if(!c.active) return;
+            if(Math.hypot(b.x - c.x, b.y - c.y) < 20) {
+                totalBalls++; bcEl.innerText = totalBalls; c.active = false;
+                playSFX(1200, 'sine', 0.1);
+            }
+        });
+    });
+
+    if(firing && balls.every(b => !b.active)) {
+        balls = []; firing = false;
+        // Check for loss (bricks too low)
+        bricks.forEach(b => b.y += b.w + pad); // Move Bricks Down
+        collectibles.forEach(c => c.y += (width - (border*2) - (pad*(cols+1))) / cols + pad);
+        
+        if(bricks.some(b => b.y > bottomLimit - 50)) losePopup.style.display = "flex";
+        else startTurn();
     }
 }
+function startTurn() { /* Ready for next shot */ }
 
 function draw() {
-    ctx.fillStyle = "#050505"; ctx.fillRect(0,0,width,height);
+    ctx.fillStyle = "#111"; ctx.fillRect(0,0,width,height);
 
-    // BORDERS
-    ctx.strokeStyle = "#333"; ctx.lineWidth = borderSize;
-    ctx.strokeRect(borderSize/2, 50 + borderSize/2, width - borderSize, height - 90);
-    
-    // FLOOR
-    ctx.strokeStyle = firing ? "#333" : "#0f0"; // Green line when ready
-    ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(borderSize, height - 60); ctx.lineTo(width - borderSize, height - 60); ctx.stroke();
+    // DRAW SAFE ZONE FLOOR
+    ctx.strokeStyle = "#555"; ctx.lineWidth = 2; 
+    ctx.beginPath(); ctx.moveTo(0, bottomLimit); ctx.lineTo(width, bottomLimit); ctx.stroke();
+    ctx.fillStyle = "#222"; ctx.fillRect(0, bottomLimit, width, height - bottomLimit); // Dark area below floor
 
-    // AIM LINE
     if(isAiming) {
-        ctx.beginPath(); ctx.setLineDash([4, 8]); ctx.moveTo(width/2, height - 60);
+        ctx.beginPath(); ctx.setLineDash([4, 10]); ctx.moveTo(width/2, bottomLimit);
         let angle = Math.atan2(startY - endY, startX - endX);
-        ctx.lineTo(width/2 - Math.cos(angle)*500, height-60 - Math.sin(angle)*500);
-        ctx.strokeStyle = firing ? "#555" : "#0ff"; // Grey if firing, Blue if ready
-        ctx.stroke(); ctx.setLineDash([]);
+        ctx.lineTo(width/2 - Math.cos(angle)*600, bottomLimit - Math.sin(angle)*600);
+        ctx.strokeStyle = "#0ff"; ctx.stroke(); ctx.setLineDash([]);
     }
 
-    // BRICKS
     bricks.forEach(b => {
-        let bx = b.col*(b.s+pad)+pad+borderSize, by = b.row*(b.s+pad)+100;
-        let color = level > 5 ? `hsl(${340 - b.hp * 2}, 70%, 50%)` : `hsl(${200 + b.hp * 10}, 70%, 50%)`;
+        let color = `hsl(${b.hp * 10}, 70%, 50%)`;
         ctx.fillStyle = color;
-        
         if(b.shape === 2) { // Triangle
-            ctx.beginPath(); ctx.moveTo(bx + b.s/2, by); ctx.lineTo(bx+b.s, by+b.s); ctx.lineTo(bx, by+b.s); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(b.x + b.w/2, b.y); ctx.lineTo(b.x+b.w, b.y+b.h); ctx.lineTo(b.x, b.y+b.h); ctx.fill();
+        } else if(b.shape === 3) { // Circle
+            ctx.beginPath(); ctx.arc(b.x+b.w/2, b.y+b.h/2, b.w/2, 0, Math.PI*2); ctx.fill();
         } else { // Square
-            ctx.beginPath(); ctx.roundRect(bx, by, b.s, b.s, 4); ctx.fill();
+            ctx.fillRect(b.x, b.y, b.w, b.h);
         }
-        
-        ctx.fillStyle = "#fff"; ctx.font = "bold 12px Arial"; ctx.fillText(b.hp, bx+b.s/2, by+b.s/2+5);
+        ctx.fillStyle = "#fff"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center"; 
+        ctx.fillText(b.hp, b.x + b.w/2, b.y + b.h/2 + 5);
     });
 
-    // COLLECTIBLES
     collectibles.forEach(c => {
-        let cx = c.col*(c.s+pad)+pad+borderSize+c.s/2, cy = c.row*(c.s+pad)+100+c.s/2;
-        ctx.strokeStyle = "#0f0"; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI*2); ctx.stroke();
-        ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI*2); ctx.fill();
+        if(c.active) { ctx.fillStyle = "#0f0"; ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI*2); ctx.fill(); }
     });
 
-    // BALLS
     ctx.fillStyle = "#fff"; balls.forEach(b => { if(b.active) { ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI*2); ctx.fill(); }});
-    
-    // LAUNCHER
-    ctx.fillStyle = firing ? "#555" : "#0ff"; // Changes color when ready
-    ctx.beginPath(); ctx.arc(width/2, height-60, 8, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = firing ? "#555" : "#0ff"; ctx.beginPath(); ctx.arc(width/2, bottomLimit, 8, 0, Math.PI*2); ctx.fill();
 
     update(); requestAnimationFrame(draw);
 }
