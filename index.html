@@ -1,38 +1,36 @@
-Index.html
 <!DOCTYPE html>
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Brick Mission: Master</title>
+    <title>Brick Mission: Shield & Sound</title>
     <style>
         body { background: #000; margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; touch-action: none; color: white; }
         canvas { display: block; background: #050505; }
-        #menu {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.95); display: flex; flex-direction: column;
-            justify-content: center; align-items: center; z-index: 20;
-        }
-        .mode-btn { 
-            width: 85%; max-width: 320px; padding: 12px; margin: 8px;
-            font-size: 16px; font-weight: bold; border: 2px solid #0ff;
-            background: transparent; color: #0ff; border-radius: 8px; cursor: pointer;
-        }
-        .best-score { font-size: 11px; color: #aaa; display: block; }
-        #stats { position: absolute; top: 15px; width: 100%; display: flex; justify-content: space-around; color: #0ff; font-weight: bold; z-index: 10; pointer-events: none;}
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+        .stats { position: absolute; top: 15px; width: 100%; display: flex; justify-content: space-around; color: #0ff; font-weight: bold; font-size: 14px; text-shadow: 0 0 5px #000; }
+        #boss-ui { position: absolute; top: 45px; left: 10%; width: 80%; height: 10px; border: 1px solid #f0f; display: none; border-radius: 5px; overflow: hidden; }
+        #boss-hp { height: 100%; background: #f0f; width: 100%; transition: width 0.1s; }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 20; pointer-events: auto; text-align: center; }
+        .btn { width: 220px; padding: 15px; margin: 10px; font-size: 18px; font-weight: bold; border: 2px solid #0ff; background: transparent; color: #0ff; border-radius: 30px; cursor: pointer; }
+        h1 { color: #0ff; text-shadow: 0 0 20px #0ff; margin: 0; }
     </style>
 </head>
 <body>
 
-    <div id="stats">
-        <span>SCORE: <span id="score">0</span></span>
-        <span id="hint">AIM & RELEASE</span>
+    <div id="ui-layer">
+        <div class="stats">
+            <span>SCORE: <span id="score">0</span></span>
+            <span id="level-label">MISSION: <span id="level-display">1</span></span>
+        </div>
+        <div id="boss-ui"><div id="boss-hp"></div></div>
     </div>
 
-    <div id="menu">
-        <h1 style="color: #0ff; text-shadow: 0 0 10px #0ff;">BRICK MISSION</h1>
-        <button class="mode-btn" onclick="startMode('classic')">CLASSIC MISSION <span class="best-score" id="best-classic">Best: 0</span></button>
-        <button class="mode-btn" onclick="startMode('descent')">DESCENT MISSION <span class="best-score" id="best-descent">Best: 0</span></button>
-        <button class="mode-btn" onclick="startMode('boss')">BOSS ENCOUNTER <span class="best-score" id="best-boss">Best: 0</span></button>
+    <div id="overlay">
+        <h1 id="title">MISSION HUB</h1>
+        <p id="subtitle">SOUNDS & SHIELDS ONLINE</p>
+        <div id="button-container">
+            <button class="btn" onclick="initAudio(); startMission(1)">START GAME</button>
+        </div>
     </div>
 
     <canvas id="gameCanvas"></canvas>
@@ -40,141 +38,146 @@ Index.html
 <script>
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
-const menu = document.getElementById("menu");
-const scoreEl = document.getElementById("score");
-const hintEl = document.getElementById("hint");
+const overlay = document.getElementById("overlay"), title = document.getElementById("title"), subtitle = document.getElementById("subtitle");
+const btnContainer = document.getElementById("button-container"), scoreEl = document.getElementById("score"), levelEl = document.getElementById("level-display");
+const bossUI = document.getElementById("boss-ui"), bossHPBar = document.getElementById("boss-hp");
 
-let gameRunning = false, isAiming = false, score = 0, currentMode = '';
-let paddleX, paddleW, bricks = [], balls = [];
-let launchAngle = -Math.PI / 2;
+let audioCtx, gameRunning = false, score = 0, currentLevel = 1;
+let paddleX, paddleW, normalPaddleW, balls = [], bricks = [], powerups = [];
+let isBossLevel = false, bossObj = null, shieldAngle = 0;
+
+// --- AUDIO ENGINE ---
+function initAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playSound(freq, type, duration, vol = 0.1) {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
 
 function setup() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-    paddleW = canvas.width * 0.3;
+    normalPaddleW = canvas.width * 0.28;
+    paddleW = normalPaddleW;
     paddleX = (canvas.width - paddleW) / 2;
 }
 window.addEventListener('resize', setup);
 setup();
 
-function updateHighScoresDisplay() {
-    ['classic', 'descent', 'boss'].forEach(mode => {
-        const high = localStorage.getItem('highScore_' + mode) || 0;
-        document.getElementById('best-' + mode).innerText = "Best: " + high;
-    });
-}
-updateHighScoresDisplay();
-
-function startMode(mode) {
-    currentMode = mode;
-    score = 0; scoreEl.innerText = "0";
-    menu.style.display = "none";
-    gameRunning = true;
-    isAiming = true;
-    hintEl.innerText = "DRAG TO AIM";
+function generateLevel(lvl) {
     bricks = [];
-    balls = [{ x: canvas.width/2, y: canvas.height-60, dx: 0, dy: 0, radius: 8 }];
-    
-    if(mode !== 'boss') initBricks(mode === 'descent' ? 4 : 7);
-    draw();
+    isBossLevel = (lvl % 10 === 0);
+    bossUI.style.display = isBossLevel ? "block" : "none";
+    if (isBossLevel) {
+        let hp = 30 + (lvl * 2);
+        bossObj = { x: canvas.width * 0.2, y: 120, w: canvas.width * 0.6, h: 60, hp: hp, maxHp: hp };
+    } else {
+        const rows = 7, cols = 6, padding = 8;
+        const w = (canvas.width - (padding * (cols + 1))) / cols, h = 25;
+        for(let r=0; r<rows; r++) {
+            for(let c=0; c<cols; c++) {
+                if((lvl % 3 === 1 && (r+c)%2===0) || (lvl % 3 === 2 && c%2===0) || (lvl % 3 === 0)) {
+                    bricks.push({ x: c*(w+padding)+padding, y: r*(h+padding)+100, w: w, h: h, status: 1, color: `hsl(${r*40+lvl*20}, 80%, 60%)` });
+                }
+            }
+        }
+    }
 }
 
-// Touch Handling
-window.addEventListener("touchstart", (e) => { if(!gameRunning) return; e.preventDefault(); });
-window.addEventListener("touchmove", (e) => {
-    if(!gameRunning) return;
-    let touchX = e.touches[0].clientX;
-    let touchY = e.touches[0].clientY;
+function startMission(lvl) {
+    currentLevel = lvl;
+    levelEl.innerText = lvl;
+    generateLevel(lvl);
+    let s = 4.5 + (lvl * 0.1);
+    balls = [{ x: canvas.width/2, y: canvas.height-120, dx: s, dy: -s, radius: 8 }];
+    powerups = []; paddleW = normalPaddleW; overlay.style.display = "none"; gameRunning = true;
+    requestAnimationFrame(draw);
+}
 
-    if(isAiming) {
-        // Calculate angle between ball and touch point
-        launchAngle = Math.atan2(touchY - (canvas.height-60), touchX - (canvas.width/2));
-    } else {
-        paddleX = touchX - paddleW/2;
-    }
-}, { passive: false });
-
-window.addEventListener("touchend", () => {
-    if(isAiming) {
-        isAiming = false;
-        hintEl.innerText = "PLAYING";
-        balls[0].dx = Math.cos(launchAngle) * 7;
-        balls[0].dy = Math.sin(launchAngle) * 7;
-    }
-});
+window.addEventListener("touchmove", (e) => { if(gameRunning) paddleX = e.touches[0].clientX - paddleW/2; });
 
 function draw() {
     if(!gameRunning) return;
-    ctx.fillStyle = "rgba(0,0,0,0.4)";
-    ctx.fillRect(0,0,canvas.width, canvas.height);
+    ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.fillRect(0,0,canvas.width, canvas.height);
+    ctx.fillStyle = "#0ff"; ctx.beginPath(); ctx.roundRect(paddleX, canvas.height-50, paddleW, 14, 7); ctx.fill();
 
-    // DRAW AIMING LINE
-    if(isAiming) {
-        ctx.setLineDash([5, 10]);
-        ctx.beginPath();
-        ctx.moveTo(canvas.width/2, canvas.height-60);
-        ctx.lineTo(canvas.width/2 + Math.cos(launchAngle)*150, (canvas.height-60) + Math.sin(launchAngle)*150);
-        ctx.strokeStyle = "#0ff";
-        ctx.stroke();
-        ctx.setLineDash([]);
-    }
+    if (isBossLevel) {
+        // Draw Boss
+        ctx.fillStyle = "#f0f"; ctx.beginPath(); ctx.roundRect(bossObj.x, bossObj.y, bossObj.w, bossObj.h, 10); ctx.fill();
+        bossHPBar.style.width = (bossObj.hp/bossObj.maxHp*100) + "%";
+        
+        // Rotating Shields
+        shieldAngle += 0.04;
+        for(let i=0; i<2; i++) {
+            let sx = (bossObj.x + bossObj.w/2) + Math.cos(shieldAngle + i*Math.PI) * 120;
+            let sy = (bossObj.y + bossObj.h/2) + Math.sin(shieldAngle + i*Math.PI) * 120;
+            ctx.fillStyle = "#0af"; ctx.beginPath(); ctx.arc(sx, sy, 15, 0, Math.PI*2); ctx.fill();
+            balls.forEach(ball => {
+                let dist = Math.hypot(ball.x - sx, ball.y - sy);
+                if(dist < 23) { ball.dy *= -1; ball.dx *= -1; playSound(150, 'sawtooth', 0.1); }
+            });
+        }
 
-    // DRAW PADDLE
-    ctx.fillStyle = "#0ff";
-    ctx.fillRect(paddleX, canvas.height-45, paddleW, 15);
-
-    // DRAW BRICKS
-    bricks.forEach((row, rIdx) => {
-        row.forEach((b, cIdx) => {
+        balls.forEach(ball => {
+            if(ball.x > bossObj.x && ball.x < bossObj.x+bossObj.w && ball.y > bossObj.y && ball.y < bossObj.y+bossObj.h) {
+                ball.dy *= -1; bossObj.hp--; score += 50; scoreEl.innerText = score;
+                playSound(400, 'square', 0.05);
+            }
+        });
+        if(bossObj.hp <= 0) { playSound(600, 'sine', 0.5); missionWin(); }
+    } else {
+        let active = 0;
+        bricks.forEach(b => {
             if(b.status) {
-                let bx = cIdx*(canvas.width/6)+2, by = rIdx*32 + 85;
-                ctx.fillStyle = b.color;
-                ctx.fillRect(bx, by, canvas.width/6-4, 28);
-                
+                active++; ctx.fillStyle = b.color; ctx.fillRect(b.x, b.y, b.w, b.h);
                 balls.forEach(ball => {
-                    if(!isAiming && ball.x > bx && ball.x < bx+canvas.width/6 && ball.y > by && ball.y < by+28) {
-                        ball.dy *= -1; b.status = 0; score += 10;
-                        scoreEl.innerText = score;
+                    if(ball.x > b.x && ball.x < b.x+b.w && ball.y > b.y && ball.y < b.y+b.h) {
+                        ball.dy *= -1; b.status = 0; score += 10; scoreEl.innerText = score;
+                        playSound(800, 'sine', 0.1);
+                        if(Math.random() < 0.1) powerups.push({ x: b.x+b.w/2, y: b.y });
                     }
                 });
             }
         });
-    });
+        if(active === 0) missionWin();
+    }
 
-    // BALL LOGIC
-    balls.forEach((ball, i) => {
-        ctx.beginPath(); ctx.arc(ball.x, ball.y, 8, 0, Math.PI*2);
-        ctx.fillStyle = "#fff"; ctx.fill();
-
-        if(!isAiming) {
-            ball.x += ball.dx; ball.y += ball.dy;
-            if(ball.x < 8 || ball.x > canvas.width-8) ball.dx *= -1;
-            if(ball.y < 8) ball.dy *= -1;
-            if(ball.y > canvas.height-45 && ball.x > paddleX && ball.x < paddleX+paddleW) {
-                ball.dy = -Math.abs(ball.dy);
-            }
-            if(ball.y > canvas.height) endGame("MISSION FAILED");
+    powerups.forEach((p, i) => {
+        p.y += 3; ctx.fillStyle = "#0f0"; ctx.fillText("⭐", p.x, p.y);
+        if(p.y > canvas.height-55 && p.x > paddleX && p.x < paddleX+paddleW) {
+            powerups.splice(i, 1); paddleW = normalPaddleW*1.5; playSound(1000, 'sine', 0.3);
+            setTimeout(()=>paddleW = normalPaddleW, 7000);
         }
     });
 
+    balls.forEach((ball, i) => {
+        ctx.beginPath(); ctx.arc(ball.x, ball.y, 8, 0, Math.PI*2); ctx.fillStyle = "#fff"; ctx.fill();
+        ball.x += ball.dx; ball.y += ball.dy;
+        if(ball.x < 8 || ball.x > canvas.width-8) { ball.dx *= -1; playSound(300, 'sine', 0.05); }
+        if(ball.y < 8) { ball.dy *= -1; playSound(300, 'sine', 0.05); }
+        if(ball.y > canvas.height-50 && ball.x > paddleX && ball.x < paddleX+paddleW) {
+            ball.dy = -Math.abs(ball.dy); playSound(200, 'triangle', 0.1);
+        }
+        if(ball.y > canvas.height) { gameRunning = false; overlay.style.display="flex"; title.innerText="FAILED"; }
+    });
     if(gameRunning) requestAnimationFrame(draw);
 }
 
-function initBricks(rows) {
-    for(let r=0; r<rows; r++) {
-        let row = [];
-        for(let c=0; c<6; c++) row.push({ status: 1, color: `hsl(${r*35+190}, 80%, 50%)` });
-        bricks.push(row);
-    }
-}
-
-function endGame(msg) {
-    gameRunning = false;
-    const currentHigh = localStorage.getItem('highScore_' + currentMode) || 0;
-    if(score > currentHigh) localStorage.setItem('highScore_' + currentMode, score);
-    menu.style.display = "flex";
-    menu.querySelector('h1').innerText = msg;
-    updateHighScoresDisplay();
+function missionWin() {
+    gameRunning = false; overlay.style.display = "flex";
+    title.innerText = "MISSION CLEAR";
+    btnContainer.innerHTML = `<button class="btn" onclick="startMission(${currentLevel+1})">NEXT LEVEL</button>`;
 }
 </script>
 </body>
