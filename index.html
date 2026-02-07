@@ -3,16 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Brick Mission: Zero Bugs</title>
+    <title>Brick Mission: V3.1 Repair</title>
     <style>
         body { background: #000; margin: 0; overflow: hidden; font-family: sans-serif; touch-action: none; color: white; }
         canvas { display: block; }
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
-        #top-bar { position: absolute; top: 0; width: 100%; height: 60px; background: #111; display: flex; justify-content: space-between; align-items: center; padding: 0 15px; box-sizing: border-box; border-bottom: 2px solid #333; }
+        
+        /* THE FIX: Allow buttons to be clickable again */
+        #top-bar { 
+            position: absolute; top: 0; width: 100%; height: 60px; background: #111; 
+            display: flex; justify-content: space-between; align-items: center; 
+            padding: 0 15px; box-sizing: border-box; border-bottom: 2px solid #333;
+            pointer-events: auto; 
+        }
+
         .stat { font-weight: bold; font-size: 14px; color: #0ff; }
-        #version-tag { position: absolute; top: 70px; right: 10px; font-size: 12px; color: #ff0055; font-weight: bold; background: #000; padding: 2px 8px; border: 1px solid #ff0055; border-radius: 4px; }
-        .popup { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; pointer-events: auto; }
-        .btn { padding: 15px 40px; font-size: 20px; font-weight: bold; border-radius: 40px; border: none; background: #0f0; color: #000; margin-top: 20px; box-shadow: 0 0 20px #0f0; }
+        .ui-btn { background: #333; border: 1px solid #444; color: white; padding: 6px 12px; border-radius: 4px; font-size: 12px; }
+        
+        .popup { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.9); display: none; flex-direction: column; 
+            justify-content: center; align-items: center; z-index: 100; 
+            pointer-events: auto; 
+        }
+        .btn-large { padding: 15px 40px; font-size: 20px; font-weight: bold; border-radius: 40px; border: none; background: #0f0; color: #000; margin-top: 20px; }
     </style>
 </head>
 <body>
@@ -21,21 +35,18 @@
         <div id="top-bar">
             <div class="stat" id="mission-tag">MISSION 1</div>
             <div class="stat">BALLS: <span id="bc">20</span></div>
-            <div class="stat" onclick="location.reload()" style="color:#aaa">RESTART</div>
+            <button class="ui-btn" onclick="location.reload()">RESTART</button>
         </div>
-        <div id="version-tag">V3.0 - REPAIRED</div>
     </div>
 
     <div id="win-popup" class="popup">
-        <h1 style="color: #0f0; font-size: 40px;">CONGRATS!</h1>
-        <p>MISSION ACCOMPLISHED</p>
-        <button class="btn" onclick="nextLevel()">NEXT LEVEL</button>
+        <h1 style="color: #0f0;">MISSION CLEAR!</h1>
+        <button class="btn-large" onclick="nextLevel()">NEXT LEVEL</button>
     </div>
 
     <div id="lose-popup" class="popup">
         <h1 style="color: #f00;">FAILED</h1>
-        <p>THEY REACHED THE BOTTOM</p>
-        <button class="btn" style="background:#f00; color:#fff;" onclick="restartLevel()">TRY AGAIN</button>
+        <button class="btn-large" style="background:#f00; color:#fff;" onclick="restartLevel()">RETRY</button>
     </div>
 
     <canvas id="gameCanvas"></canvas>
@@ -56,7 +67,6 @@ function playSFX(f, t, d, v=0.04) { if(!audioCtx) return; let o=audioCtx.createO
 function setup() {
     width = canvas.width = window.innerWidth;
     height = canvas.height = window.innerHeight;
-    // CRITICAL: Safe zone is 100px from the bottom to avoid phone bars
     safeFloorY = height - 100; 
     if(bricks.length === 0) startMission(1);
 }
@@ -66,17 +76,14 @@ function startMission(lvl) {
     winPopup.style.display = "none"; losePopup.style.display = "none";
     firing = false; balls = []; bricks = []; collectibles = [];
     
-    // Grid Math: Lock size to screen width
     let bSize = (width - (pad * (cols + 1))) / cols;
-    let rows = (level <= 5) ? 4 : 7; // Fewer rows for starting levels
+    let rows = (level <= 5) ? 4 : 7;
 
     for(let r=0; r < rows; r++) {
         for(let c=0; c < cols; c++) {
-            let rnd = Math.random();
-            if(rnd > 0.45) {
-                let shape = (level > 5 && Math.random() > 0.8) ? 2 : 1;
-                bricks.push({c: c, r: r, x: pad + c*(bSize+pad), y: 100 + r*(bSize+pad), w: bSize, h: bSize, hp: level * 2 + r, shape: shape});
-            } else if(rnd > 0.92) {
+            if(Math.random() > 0.45) {
+                bricks.push({c: c, r: r, x: pad + c*(bSize+pad), y: 100 + r*(bSize+pad), w: bSize, h: bSize, hp: level * 2 + r});
+            } else if(Math.random() > 0.92) {
                 collectibles.push({x: pad + c*(bSize+pad) + bSize/2, y: 100 + r*(bSize+pad) + bSize/2, active: true});
             }
         }
@@ -86,13 +93,19 @@ function startMission(lvl) {
 function nextLevel() { totalBalls += 2; startMission(level + 1); }
 function restartLevel() { totalBalls = 20; startMission(level); }
 
-// TOUCH CONTROLS
 window.addEventListener("touchstart", e => { 
-    if(!firing) { initAudio(); isAiming = true; startX = e.touches[0].clientX; startY = e.touches[0].clientY; endX=startX; endY=startY; }
+    // FIXED: Allow aiming even if balls are returning
+    if (e.target.tagName === 'BUTTON') return; 
+    initAudio(); isAiming = true; 
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY; 
+    endX=startX; endY=startY;
 });
+
 window.addEventListener("touchmove", e => { if(isAiming) { endX = e.touches[0].clientX; endY = e.touches[0].clientY; }});
+
 window.addEventListener("touchend", () => {
-    if(isAiming && startY - endY > 40) fire(Math.atan2(startY - endY, startX - endX));
+    // FIXED: Only fire if a round isn't already in progress
+    if(isAiming && !firing && startY - endY > 40) fire(Math.atan2(startY - endY, startX - endX));
     isAiming = false;
 });
 
@@ -113,10 +126,8 @@ function update() {
         if(!b.active) return;
         b.x += b.dx; b.y += b.dy;
 
-        if(b.x < 5 || b.x > width-5) { b.dx *= -1; playSFX(400, 'sine', 0.02); }
-        if(b.y < 65) { b.dy *= -1; playSFX(400, 'sine', 0.02); }
-        
-        // SAFE FLOOR BOUNCE
+        if(b.x < 5 || b.x > width-5) b.dx *= -1;
+        if(b.y < 65) b.dy *= -1;
         if(b.y > safeFloorY) { b.y = safeFloorY; b.active = false; }
 
         bricks.forEach((br, i) => {
@@ -125,7 +136,7 @@ function update() {
                 let oy = Math.min(Math.abs(b.y - br.y), Math.abs(b.y - (br.y+br.h)));
                 if(ox < oy) b.dx *= -1; else b.dy *= -1;
                 br.hp--;
-                playSFX(600 + (br.hp*5), 'square', 0.03);
+                playSFX(600, 'square', 0.03);
                 if(br.hp <= 0) bricks.splice(i, 1);
             }
         });
@@ -133,25 +144,22 @@ function update() {
         collectibles.forEach(c => {
             if(c.active && Math.hypot(b.x - c.x, b.y - c.y) < 20) {
                 totalBalls++; bcEl.innerText = totalBalls; c.active = false;
-                playSFX(1500, 'sine', 0.1);
             }
         });
     });
 
-    if(firing && balls.every(b => !b.active)) {
-        balls = []; firing = false;
-        // Move bricks down 1 row
+    // FIXED: Improved round reset logic
+    if(firing && balls.length > 0 && balls.every(b => !b.active)) {
+        balls = []; 
+        firing = false; 
         let moveSize = (width - (pad * (cols + 1))) / cols + pad;
         bricks.forEach(b => b.y += moveSize);
-        collectibles.forEach(c => c.y += moveSize);
         if(bricks.some(b => b.y > safeFloorY - 60)) losePopup.style.display = "flex";
     }
 }
 
 function draw() {
     ctx.fillStyle = "#000"; ctx.fillRect(0,0,width,height);
-
-    // DRAW SAFE FLOOR
     ctx.strokeStyle = "#333"; ctx.lineWidth = 4;
     ctx.beginPath(); ctx.moveTo(0, safeFloorY); ctx.lineTo(width, safeFloorY); ctx.stroke();
 
@@ -159,16 +167,13 @@ function draw() {
         ctx.beginPath(); ctx.setLineDash([4, 12]); ctx.moveTo(width/2, safeFloorY);
         let angle = Math.atan2(startY - endY, startX - endX);
         ctx.lineTo(width/2 - Math.cos(angle)*600, safeFloorY - Math.sin(angle)*600);
-        ctx.strokeStyle = "#0ff"; ctx.stroke(); ctx.setLineDash([]);
+        ctx.strokeStyle = firing ? "#333" : "#0ff"; 
+        ctx.stroke(); ctx.setLineDash([]);
     }
 
     bricks.forEach(b => {
-        ctx.fillStyle = `hsl(${280 + b.hp}, 70%, 50%)`;
-        if(b.shape === 2) { // Triangle
-            ctx.beginPath(); ctx.moveTo(b.x + b.w/2, b.y); ctx.lineTo(b.x+b.w, b.y+b.h); ctx.lineTo(b.x, b.y+b.h); ctx.fill();
-        } else { // Square
-            ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 4); ctx.fill();
-        }
+        ctx.fillStyle = `hsl(${220 + b.hp * 5}, 70%, 50%)`;
+        ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 4); ctx.fill();
         ctx.fillStyle = "#fff"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
         ctx.fillText(b.hp, b.x + b.w/2, b.y + b.h/2 + 5);
     });
