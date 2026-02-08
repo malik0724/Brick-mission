@@ -3,141 +3,149 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
-<title>Brick Mission PRO</title>
+<title>Brick Mission Neon</title>
+
 <style>
 body{margin:0;background:#000;overflow:hidden;font-family:Arial;color:#0ff;touch-action:none}
 canvas{display:block}
-#ui{position:absolute;top:0;width:100%;height:60px;background:#111;display:flex;justify-content:space-between;align-items:center;padding:0 14px;border-bottom:2px solid #333;z-index:10}
-.btn{background:#222;color:#fff;border:1px solid #555;padding:6px 12px;border-radius:6px}
-.popup{position:absolute;inset:0;background:rgba(0,0,0,.9);display:none;justify-content:center;align-items:center;flex-direction:column;z-index:50}
-.big{padding:14px 40px;font-size:20px;border-radius:40px;background:#0f0;border:none}
+#ui{position:absolute;top:0;width:100%;height:60px;background:rgba(0,0,0,.8);
+display:flex;justify-content:space-between;align-items:center;padding:0 12px;
+border-bottom:2px solid #0ff;z-index:10}
+.btn{
+background:#111;color:#0ff;border:1px solid #0ff;
+padding:6px 14px;border-radius:20px;
+transition:.2s;box-shadow:0 0 8px #0ff;
+animation:pulse 1.5s infinite alternate;
+}
+.btn:active{transform:scale(.9)}
+@keyframes pulse{to{box-shadow:0 0 20px #0ff}}
+
+.popup{position:absolute;inset:0;background:rgba(0,0,0,.95);
+display:flex;justify-content:center;align-items:center;
+flex-direction:column;z-index:50}
+.hidden{display:none}
+
+#combo{position:absolute;top:70px;left:50%;transform:translateX(-50%);
+font-size:22px;color:#0f0;text-shadow:0 0 10px #0f0}
 </style>
 </head>
 <body>
 
 <div id="ui">
-  <div id="lvl">MISSION 1</div>
-  <div>BALLS: <span id="bc">20</span></div>
-  <button class="btn" onclick="location.reload()">RESTART</button>
+  <div>MISSION <span id="lvl">1</span></div>
+  <div>🔥 COMBO</div>
+  <div>BALLS <span id="bc">20</span></div>
+  <button class="btn" onclick="togglePause()">⏯</button>
 </div>
 
-<div id="win" class="popup">
-<h1>MISSION CLEAR</h1>
-<button class="big" onclick="next()">NEXT</button>
-</div>
+<div id="combo">x1</div>
 
-<div id="lose" class="popup">
-<h1 style="color:red">FAILED</h1>
-<button class="big" style="background:red;color:#fff" onclick="restart()">RETRY</button>
+<div id="start" class="popup">
+<h1>BRICK MISSION</h1>
+<button class="btn" onclick="startGame()">START</button>
 </div>
 
 <canvas id="c"></canvas>
 
 <script>
-const c = document.getElementById("c"), ctx = c.getContext("2d");
-const bc = document.getElementById("bc"), lvl = document.getElementById("lvl");
-const win = document.getElementById("win"), lose = document.getElementById("lose");
+const c=document.getElementById("c"),ctx=c.getContext("2d");
+const lvlEl=document.getElementById("lvl"),bc=document.getElementById("bc");
+const comboEl=document.getElementById("combo"),startUI=document.getElementById("start");
 
-let W,H,floorY,balls=[],bricks=[],aiming=false,firing=false,startX,startY,endX,endY;
-let totalBalls=20,level=1;
+let W,H,floorY,paused=false,started=false;
+let balls=[],bricks=[],particles=[],powerups=[];
+let aiming=false,startX,startY,endX,endY;
+let level=1,totalBalls=20,combo=1;
 
 function resize(){W=c.width=innerWidth;H=c.height=innerHeight;floorY=H-100;}
-window.onresize=resize;resize();
+resize();onresize=resize;
 
-function start(l){
-level=l;lvl.textContent="MISSION "+level;bc.textContent=totalBalls;
-win.style.display=lose.style.display="none";balls=[];bricks=[];firing=false;
+function startGame(){started=true;startUI.classList.add("hidden");spawn();}
+function togglePause(){paused=!paused;}
 
+function spawn(){
+balls=[];bricks=[];combo=1;comboEl.textContent="x1";
 let cols=8,p=4,size=(W-(p*9))/8;
 for(let r=0;r<5;r++){
- for(let x=0;x<cols;x++){
-  if(Math.random()>.4){
-   bricks.push({x:p+x*(size+p),y:80+r*(size+p),w:size,h:size,hp:level*2+r});
-}}}}
-
-start(1);
+for(let x=0;x<cols;x++){
+if(Math.random()>.4){
+bricks.push({x:p+x*(size+p),y:80+r*(size+p),w:size,h:size,hp:level*2+r});
+}}}
+bc.textContent=totalBalls;lvlEl.textContent=level;
+}
 
 addEventListener("touchstart",e=>{
- if(e.target.tagName==="BUTTON")return;
- aiming=true;
- startX=endX=e.touches[0].clientX;
- startY=endY=e.touches[0].clientY;
+if(!started||paused)return;
+aiming=true;startX=endX=e.touches[0].clientX;startY=endY=e.touches[0].clientY;
 });
-
-addEventListener("touchmove",e=>{
- if(aiming){endX=e.touches[0].clientX;endY=e.touches[0].clientY;}
-});
-
+addEventListener("touchmove",e=>{if(aiming){endX=e.touches[0].clientX;endY=e.touches[0].clientY;}});
 addEventListener("touchend",()=>{
- if(aiming&&!firing){
-  let dx=endX-startX,dy=endY-startY;
-  if(dy>-40)dy=-40;
-  let len=Math.hypot(dx,dy);dx/=len;dy/=len;
-  fire(dx,dy);
- }
- aiming=false;
+if(aiming&&!balls.length){
+let dx=endX-startX,dy=endY-startY;if(dy>-40)dy=-40;
+let l=Math.hypot(dx,dy);dx/=l;dy/=l;
+for(let i=0;i<totalBalls;i++){
+setTimeout(()=>balls.push({x:W/2,y:floorY,vx:dx*12,vy:dy*12,live:true}),i*60);
+}
+}
+aiming=false;
 });
 
-function fire(dx,dy){
- firing=true;let i=0;
- let it=setInterval(()=>{
-  balls.push({x:W/2,y:floorY,vx:dx*12,vy:dy*12,live:true});
-  if(++i>=totalBalls)clearInterval(it);
- },60);
+function spark(x,y){
+for(let i=0;i<10;i++){
+particles.push({x,y,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,life:20});
+}
 }
 
 function update(){
- balls.forEach(b=>{
-  if(!b.live)return;
-  b.x+=b.vx;b.y+=b.vy;
-  if(b.x<5||b.x>W-5)b.vx*=-1;
-  if(b.y<60)b.vy*=-1;
-  if(b.y>floorY){b.live=false;b.y=floorY;}
-  bricks.forEach(br=>{
-   if(b.x>br.x&&b.x<br.x+br.w&&b.y>br.y&&b.y<br.y+br.h){
-    let ox=Math.min(b.x-br.x,br.x+br.w-b.x);
-    let oy=Math.min(b.y-br.y,br.y+br.h-b.y);
-    ox<oy?b.vx*=-1:b.vy*=-1;br.hp--;
-   }
-  });
-  bricks=bricks.filter(b=>b.hp>0);
- });
- if(firing&&balls.every(b=>!b.live)){
-  balls=[];firing=false;bricks.forEach(b=>b.y+=40);
-  if(bricks.some(b=>b.y>floorY-50))lose.style.display="flex";
-  if(bricks.length===0)win.style.display="flex";
- }
+if(paused||!started)return;
+
+balls.forEach(b=>{
+if(!b.live)return;
+b.x+=b.vx;b.y+=b.vy;
+
+if(b.x<5||b.x>W-5)b.vx*=-1;
+if(b.y<60)b.vy*=-1;
+if(b.y>floorY){b.live=false;}
+
+bricks.forEach(br=>{
+if(b.x>br.x&&b.x<br.x+br.w&&b.y>br.y&&b.y<br.y+br.h){
+b.vy*=-1;br.hp--;combo++;comboEl.textContent="x"+combo;spark(b.x,b.y);
+}
+});
+bricks=bricks.filter(b=>b.hp>0);
+});
+
+particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life--;});
+particles=particles.filter(p=>p.life>0);
 }
 
 function draw(){
- ctx.clearRect(0,0,W,H);
- ctx.strokeStyle="#333";ctx.beginPath();ctx.moveTo(0,floorY);ctx.lineTo(W,floorY);ctx.stroke();
+ctx.clearRect(0,0,W,H);
+ctx.shadowBlur=20;ctx.shadowColor="#0ff";
 
- if(aiming&&!firing){
-  let dx=endX-startX,dy=endY-startY;
-  if(dy>-40)dy=-40;
-  let l=Math.hypot(dx,dy);dx/=l;dy/=l;
-  ctx.setLineDash([6,12]);ctx.beginPath();
-  ctx.moveTo(W/2,floorY);
-  ctx.lineTo(W/2+dx*600,floorY+dy*600);
-  ctx.strokeStyle="#0ff";ctx.stroke();ctx.setLineDash([]);
- }
+if(aiming){
+let dx=endX-startX,dy=endY-startY;if(dy>-40)dy=-40;
+let l=Math.hypot(dx,dy);dx/=l;dy/=l;
+ctx.setLineDash([6,12]);ctx.beginPath();
+ctx.moveTo(W/2,floorY);
+ctx.lineTo(W/2+dx*600,floorY+dy*600);
+ctx.stroke();ctx.setLineDash([]);
+}
 
- bricks.forEach(b=>{
-  ctx.fillStyle=`hsl(${200+b.hp*10},80%,50%)`;
-  ctx.fillRect(b.x,b.y,b.w,b.h);
-  ctx.fillStyle="#fff";ctx.fillText(b.hp,b.x+b.w/2,b.y+b.h/2);
- });
+bricks.forEach(b=>{
+ctx.fillStyle=`hsl(${200+b.hp*10},80%,50%)`;
+ctx.fillRect(b.x,b.y,b.w,b.h);
+});
 
- ctx.fillStyle="#fff";
- balls.forEach(b=>{if(b.live){ctx.beginPath();ctx.arc(b.x,b.y,4,0,Math.PI*2);ctx.fill();}});
+ctx.fillStyle="#fff";
+balls.forEach(b=>{if(b.live){ctx.beginPath();ctx.arc(b.x,b.y,4,0,Math.PI*2);ctx.fill();}});
 
- update();requestAnimationFrame(draw);
+ctx.fillStyle="#0ff";
+particles.forEach(p=>{ctx.fillRect(p.x,p.y,2,2);});
+
+update();requestAnimationFrame(draw);
 }
 draw();
-
-function next(){totalBalls+=2;start(level+1);}
-function restart(){totalBalls=20;start(level);}
 </script>
 </body>
 </html>
