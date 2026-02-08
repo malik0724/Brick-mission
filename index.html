@@ -1,197 +1,143 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Brick Mission: V3.1 Repair</title>
-    <style>
-        body { background: #000; margin: 0; overflow: hidden; font-family: sans-serif; touch-action: none; color: white; }
-        canvas { display: block; }
-        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
-        
-        /* THE FIX: Allow buttons to be clickable again */
-        #top-bar { 
-            position: absolute; top: 0; width: 100%; height: 60px; background: #111; 
-            display: flex; justify-content: space-between; align-items: center; 
-            padding: 0 15px; box-sizing: border-box; border-bottom: 2px solid #333;
-            pointer-events: auto; 
-        }
-
-        .stat { font-weight: bold; font-size: 14px; color: #0ff; }
-        .ui-btn { background: #333; border: 1px solid #444; color: white; padding: 6px 12px; border-radius: 4px; font-size: 12px; }
-        
-        .popup { 
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(0,0,0,0.9); display: none; flex-direction: column; 
-            justify-content: center; align-items: center; z-index: 100; 
-            pointer-events: auto; 
-        }
-        .btn-large { padding: 15px 40px; font-size: 20px; font-weight: bold; border-radius: 40px; border: none; background: #0f0; color: #000; margin-top: 20px; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>Brick Mission PRO</title>
+<style>
+body{margin:0;background:#000;overflow:hidden;font-family:Arial;color:#0ff;touch-action:none}
+canvas{display:block}
+#ui{position:absolute;top:0;width:100%;height:60px;background:#111;display:flex;justify-content:space-between;align-items:center;padding:0 14px;border-bottom:2px solid #333;z-index:10}
+.btn{background:#222;color:#fff;border:1px solid #555;padding:6px 12px;border-radius:6px}
+.popup{position:absolute;inset:0;background:rgba(0,0,0,.9);display:none;justify-content:center;align-items:center;flex-direction:column;z-index:50}
+.big{padding:14px 40px;font-size:20px;border-radius:40px;background:#0f0;border:none}
+</style>
 </head>
 <body>
 
-    <div id="ui-layer">
-        <div id="top-bar">
-            <div class="stat" id="mission-tag">MISSION 1</div>
-            <div class="stat">BALLS: <span id="bc">20</span></div>
-            <button class="ui-btn" onclick="location.reload()">RESTART</button>
-        </div>
-    </div>
+<div id="ui">
+  <div id="lvl">MISSION 1</div>
+  <div>BALLS: <span id="bc">20</span></div>
+  <button class="btn" onclick="location.reload()">RESTART</button>
+</div>
 
-    <div id="win-popup" class="popup">
-        <h1 style="color: #0f0;">MISSION CLEAR!</h1>
-        <button class="btn-large" onclick="nextLevel()">NEXT LEVEL</button>
-    </div>
+<div id="win" class="popup">
+<h1>MISSION CLEAR</h1>
+<button class="big" onclick="next()">NEXT</button>
+</div>
 
-    <div id="lose-popup" class="popup">
-        <h1 style="color: #f00;">FAILED</h1>
-        <button class="btn-large" style="background:#f00; color:#fff;" onclick="restartLevel()">RETRY</button>
-    </div>
+<div id="lose" class="popup">
+<h1 style="color:red">FAILED</h1>
+<button class="big" style="background:red;color:#fff" onclick="restart()">RETRY</button>
+</div>
 
-    <canvas id="gameCanvas"></canvas>
+<canvas id="c"></canvas>
 
 <script>
-const canvas = document.getElementById("gameCanvas"), ctx = canvas.getContext("2d");
-const bcEl = document.getElementById("bc"), missionEl = document.getElementById("mission-tag");
-const winPopup = document.getElementById("win-popup"), losePopup = document.getElementById("lose-popup");
+const c = document.getElementById("c"), ctx = c.getContext("2d");
+const bc = document.getElementById("bc"), lvl = document.getElementById("lvl");
+const win = document.getElementById("win"), lose = document.getElementById("lose");
 
-let audioCtx, width, height, level = 1, totalBalls = 20, firing = false;
-let bricks = [], balls = [], collectibles = [], isAiming = false, startX, startY, endX, endY;
-let safeFloorY; 
-const cols = 8, pad = 4;
+let W,H,floorY,balls=[],bricks=[],aiming=false,firing=false,startX,startY,endX,endY;
+let totalBalls=20,level=1;
 
-function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-function playSFX(f, t, d, v=0.04) { if(!audioCtx) return; let o=audioCtx.createOscillator(), g=audioCtx.createGain(); o.type=t; o.frequency.setValueAtTime(f, audioCtx.currentTime); g.gain.setValueAtTime(v, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime+d); o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+d); }
+function resize(){W=c.width=innerWidth;H=c.height=innerHeight;floorY=H-100;}
+window.onresize=resize;resize();
 
-function setup() {
-    width = canvas.width = window.innerWidth;
-    height = canvas.height = window.innerHeight;
-    safeFloorY = height - 100; 
-    if(bricks.length === 0) startMission(1);
-}
+function start(l){
+level=l;lvl.textContent="MISSION "+level;bc.textContent=totalBalls;
+win.style.display=lose.style.display="none";balls=[];bricks=[];firing=false;
 
-function startMission(lvl) {
-    level = lvl; missionEl.innerText = "MISSION " + level; bcEl.innerText = totalBalls;
-    winPopup.style.display = "none"; losePopup.style.display = "none";
-    firing = false; balls = []; bricks = []; collectibles = [];
-    
-    let bSize = (width - (pad * (cols + 1))) / cols;
-    let rows = (level <= 5) ? 4 : 7;
+let cols=8,p=4,size=(W-(p*9))/8;
+for(let r=0;r<5;r++){
+ for(let x=0;x<cols;x++){
+  if(Math.random()>.4){
+   bricks.push({x:p+x*(size+p),y:80+r*(size+p),w:size,h:size,hp:level*2+r});
+}}}}
 
-    for(let r=0; r < rows; r++) {
-        for(let c=0; c < cols; c++) {
-            if(Math.random() > 0.45) {
-                bricks.push({c: c, r: r, x: pad + c*(bSize+pad), y: 100 + r*(bSize+pad), w: bSize, h: bSize, hp: level * 2 + r});
-            } else if(Math.random() > 0.92) {
-                collectibles.push({x: pad + c*(bSize+pad) + bSize/2, y: 100 + r*(bSize+pad) + bSize/2, active: true});
-            }
-        }
-    }
-}
+start(1);
 
-function nextLevel() { totalBalls += 2; startMission(level + 1); }
-function restartLevel() { totalBalls = 20; startMission(level); }
-
-window.addEventListener("touchstart", e => { 
-    // FIXED: Allow aiming even if balls are returning
-    if (e.target.tagName === 'BUTTON') return; 
-    initAudio(); isAiming = true; 
-    startX = e.touches[0].clientX; startY = e.touches[0].clientY; 
-    endX=startX; endY=startY;
+addEventListener("touchstart",e=>{
+ if(e.target.tagName==="BUTTON")return;
+ aiming=true;
+ startX=endX=e.touches[0].clientX;
+ startY=endY=e.touches[0].clientY;
 });
 
-window.addEventListener("touchmove", e => { if(isAiming) { endX = e.touches[0].clientX; endY = e.touches[0].clientY; }});
-
-window.addEventListener("touchend", () => {
-    // FIXED: Only fire if a round isn't already in progress
-    if(isAiming && !firing && startY - endY > 40) fire(Math.atan2(startY - endY, startX - endX));
-    isAiming = false;
+addEventListener("touchmove",e=>{
+ if(aiming){endX=e.touches[0].clientX;endY=e.touches[0].clientY;}
 });
 
-function fire(angle) {
-    firing = true; let count = 0;
-    const dx = Math.cos(angle) * 11, dy = Math.sin(angle) * 11;
-    let itv = setInterval(() => {
-        balls.push({x: width/2, y: safeFloorY, dx: -dx, dy: -dy, active: true});
-        playSFX(1000, 'sine', 0.02);
-        if(++count >= totalBalls) clearInterval(itv);
-    }, 60);
+addEventListener("touchend",()=>{
+ if(aiming&&!firing){
+  let dx=endX-startX,dy=endY-startY;
+  if(dy>-40)dy=-40;
+  let len=Math.hypot(dx,dy);dx/=len;dy/=len;
+  fire(dx,dy);
+ }
+ aiming=false;
+});
+
+function fire(dx,dy){
+ firing=true;let i=0;
+ let it=setInterval(()=>{
+  balls.push({x:W/2,y:floorY,vx:dx*12,vy:dy*12,live:true});
+  if(++i>=totalBalls)clearInterval(it);
+ },60);
 }
 
-function update() {
-    if(!firing && bricks.length === 0) { winPopup.style.display = "flex"; return; }
-    
-    balls.forEach(b => {
-        if(!b.active) return;
-        b.x += b.dx; b.y += b.dy;
-
-        if(b.x < 5 || b.x > width-5) b.dx *= -1;
-        if(b.y < 65) b.dy *= -1;
-        if(b.y > safeFloorY) { b.y = safeFloorY; b.active = false; }
-
-        bricks.forEach((br, i) => {
-            if(b.x > br.x && b.x < br.x+br.w && b.y > br.y && b.y < br.y+br.h) {
-                let ox = Math.min(Math.abs(b.x - br.x), Math.abs(b.x - (br.x+br.w)));
-                let oy = Math.min(Math.abs(b.y - br.y), Math.abs(b.y - (br.y+br.h)));
-                if(ox < oy) b.dx *= -1; else b.dy *= -1;
-                br.hp--;
-                playSFX(600, 'square', 0.03);
-                if(br.hp <= 0) bricks.splice(i, 1);
-            }
-        });
-
-        collectibles.forEach(c => {
-            if(c.active && Math.hypot(b.x - c.x, b.y - c.y) < 20) {
-                totalBalls++; bcEl.innerText = totalBalls; c.active = false;
-            }
-        });
-    });
-
-    // FIXED: Improved round reset logic
-    if(firing && balls.length > 0 && balls.every(b => !b.active)) {
-        balls = []; 
-        firing = false; 
-        let moveSize = (width - (pad * (cols + 1))) / cols + pad;
-        bricks.forEach(b => b.y += moveSize);
-        if(bricks.some(b => b.y > safeFloorY - 60)) losePopup.style.display = "flex";
-    }
+function update(){
+ balls.forEach(b=>{
+  if(!b.live)return;
+  b.x+=b.vx;b.y+=b.vy;
+  if(b.x<5||b.x>W-5)b.vx*=-1;
+  if(b.y<60)b.vy*=-1;
+  if(b.y>floorY){b.live=false;b.y=floorY;}
+  bricks.forEach(br=>{
+   if(b.x>br.x&&b.x<br.x+br.w&&b.y>br.y&&b.y<br.y+br.h){
+    let ox=Math.min(b.x-br.x,br.x+br.w-b.x);
+    let oy=Math.min(b.y-br.y,br.y+br.h-b.y);
+    ox<oy?b.vx*=-1:b.vy*=-1;br.hp--;
+   }
+  });
+  bricks=bricks.filter(b=>b.hp>0);
+ });
+ if(firing&&balls.every(b=>!b.live)){
+  balls=[];firing=false;bricks.forEach(b=>b.y+=40);
+  if(bricks.some(b=>b.y>floorY-50))lose.style.display="flex";
+  if(bricks.length===0)win.style.display="flex";
+ }
 }
 
-function draw() {
-    ctx.fillStyle = "#000"; ctx.fillRect(0,0,width,height);
-    ctx.strokeStyle = "#333"; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(0, safeFloorY); ctx.lineTo(width, safeFloorY); ctx.stroke();
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ ctx.strokeStyle="#333";ctx.beginPath();ctx.moveTo(0,floorY);ctx.lineTo(W,floorY);ctx.stroke();
 
-    if(isAiming) {
-        ctx.beginPath(); ctx.setLineDash([4, 12]); ctx.moveTo(width/2, safeFloorY);
-        let angle = Math.atan2(startY - endY, startX - endX);
-        ctx.lineTo(width/2 - Math.cos(angle)*600, safeFloorY - Math.sin(angle)*600);
-        ctx.strokeStyle = firing ? "#333" : "#0ff"; 
-        ctx.stroke(); ctx.setLineDash([]);
-    }
+ if(aiming&&!firing){
+  let dx=endX-startX,dy=endY-startY;
+  if(dy>-40)dy=-40;
+  let l=Math.hypot(dx,dy);dx/=l;dy/=l;
+  ctx.setLineDash([6,12]);ctx.beginPath();
+  ctx.moveTo(W/2,floorY);
+  ctx.lineTo(W/2+dx*600,floorY+dy*600);
+  ctx.strokeStyle="#0ff";ctx.stroke();ctx.setLineDash([]);
+ }
 
-    bricks.forEach(b => {
-        ctx.fillStyle = `hsl(${220 + b.hp * 5}, 70%, 50%)`;
-        ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 4); ctx.fill();
-        ctx.fillStyle = "#fff"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
-        ctx.fillText(b.hp, b.x + b.w/2, b.y + b.h/2 + 5);
-    });
+ bricks.forEach(b=>{
+  ctx.fillStyle=`hsl(${200+b.hp*10},80%,50%)`;
+  ctx.fillRect(b.x,b.y,b.w,b.h);
+  ctx.fillStyle="#fff";ctx.fillText(b.hp,b.x+b.w/2,b.y+b.h/2);
+ });
 
-    collectibles.forEach(c => {
-        if(c.active) {
-            ctx.strokeStyle = "#0f0"; ctx.beginPath(); ctx.arc(c.x, c.y, 8, 0, Math.PI*2); ctx.stroke();
-            ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(c.x, c.y, 3, 0, Math.PI*2); ctx.fill();
-        }
-    });
+ ctx.fillStyle="#fff";
+ balls.forEach(b=>{if(b.live){ctx.beginPath();ctx.arc(b.x,b.y,4,0,Math.PI*2);ctx.fill();}});
 
-    ctx.fillStyle = "#fff"; balls.forEach(b => { if(b.active) { ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI*2); ctx.fill(); }});
-    ctx.fillStyle = firing ? "#333" : "#0ff"; ctx.beginPath(); ctx.arc(width/2, safeFloorY, 10, 0, Math.PI*2); ctx.fill();
-
-    update(); requestAnimationFrame(draw);
+ update();requestAnimationFrame(draw);
 }
-window.addEventListener("resize", setup);
-setup(); draw();
+draw();
+
+function next(){totalBalls+=2;start(level+1);}
+function restart(){totalBalls=20;start(level);}
 </script>
 </body>
 </html>
